@@ -1,3 +1,37 @@
+rawclip 0.6.0 — 2026-09-26
+==========================
+
+Pinned history
+--------------
+
+* Add in-memory pin state which protects selected entries from automatic
+  capacity and byte-limit eviction without making them persistent or immune to
+  explicit deletion.
+* Evict the oldest unpinned entry when history reaches capacity. If every slot
+  is pinned, reject a new distinct capture without terminating the daemon or
+  synchronizing the rejected value to the opposite X11 selection.
+* Preserve pin state across deduplication while retaining stable IDs and
+  newest-first ordering.
+* Refuse configuration reloads whose tighter history limits would evict or
+  truncate pinned entries; the previous live policy remains authoritative.
+
+Control and UI
+--------------
+
+* Add `rawclip pin ID`, `unpin ID`, `menu toggle-pin`, and `clear unpinned`.
+  Existing full `clear` semantics remain unchanged.
+* Mark pinned entries in `list` and rawmenu previews and expose the pinned count
+  through `status`.
+* Bump the private local IPC protocol to version 2 so pin flags and controls
+  cannot be misread by a mismatched pre-0.6 client or daemon.
+
+Testing
+-------
+
+* Cover pinned eviction, deduplication, selective clear, menu toggling,
+  protected-full capture, daemon survival, reload conflicts, and the
+  synchronization boundary under Xvfb.
+
 rawclip 0.5.0 — 2026-09-26
 ==========================
 
