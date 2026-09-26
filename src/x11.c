@@ -23,6 +23,7 @@
 
 struct send_transfer {
     Window requestor;
+    Atom selection;
     Atom property;
     Atom target;
     unsigned char *data;
@@ -30,6 +31,13 @@ struct send_transfer {
     size_t offset;
     uint64_t activity_ms;
     struct send_transfer *next;
+};
+
+struct owned_selection {
+    char *text;
+    size_t len;
+    Time time;
+    bool synchronized;
 };
 
 struct owner_meta {
@@ -78,10 +86,12 @@ struct rawclip_x11 {
     size_t server_direct_bytes;
     struct send_transfer *send_head;
     size_t send_len;
-    char *owned_text;
-    size_t owned_len;
-    Time owned_time;
+    struct owned_selection owned_clipboard;
+    struct owned_selection owned_primary;
 };
+
+static int own_selection(struct rawclip_x11 *x, Atom selection,
+                         const char *text, size_t len, bool synchronized);
 
 static int
 x_error_handler(Display *dpy, XErrorEvent *event)
@@ -248,6 +258,64 @@ reset_receive(struct rawclip_x11 *x)
     XDeleteProperty(x->dpy, x->win, x->property);
 }
 
+static struct owned_selection *
+owned_slot(struct rawclip_x11 *x, Atom selection)
+{
+    if (selection == x->clipboard) return &x->owned_clipboard;
+    if (selection == x->primary) return &x->owned_primary;
+    return NULL;
+}
+
+static Atom
+sync_destination(const struct rawclip_x11 *x, Atom source)
+{
+    if (source == x->primary &&
+        (x->cfg->sync_mode == RAWCLIP_SYNC_PRIMARY_TO_CLIPBOARD ||
+         x->cfg->sync_mode == RAWCLIP_SYNC_BIDIRECTIONAL))
+        return x->clipboard;
+    if (source == x->clipboard &&
+        (x->cfg->sync_mode == RAWCLIP_SYNC_CLIPBOARD_TO_PRIMARY ||
+         x->cfg->sync_mode == RAWCLIP_SYNC_BIDIRECTIONAL))
+        return x->primary;
+    return None;
+}
+
+static bool
+sync_targets_selection(const struct rawclip_config *cfg, Atom selection,
+                       Atom clipboard, Atom primary)
+{
+    if (selection == clipboard)
+        return cfg->sync_mode == RAWCLIP_SYNC_PRIMARY_TO_CLIPBOARD ||
+               cfg->sync_mode == RAWCLIP_SYNC_BIDIRECTIONAL;
+    if (selection == primary)
+        return cfg->sync_mode == RAWCLIP_SYNC_CLIPBOARD_TO_PRIMARY ||
+               cfg->sync_mode == RAWCLIP_SYNC_BIDIRECTIONAL;
+    return false;
+}
+
+static void
+owned_selection_clear(struct owned_selection *owned)
+{
+    if (owned->text != NULL) {
+        memset(owned->text, 0, owned->len);
+        free(owned->text);
+    }
+    memset(owned, 0, sizeof(*owned));
+}
+
+static bool
+owned_selection_matches(const struct rawclip_x11 *x, Atom selection,
+                        const char *text, size_t len)
+{
+    const struct owned_selection *owned;
+    if (selection == x->clipboard) owned = &x->owned_clipboard;
+    else if (selection == x->primary) owned = &x->owned_primary;
+    else return false;
+    return XGetSelectionOwner(x->dpy, selection) == x->win &&
+           owned->text != NULL && owned->len == len &&
+           memcmp(owned->text, text, len) == 0;
+}
+
 static void
 send_transfer_destroy(struct send_transfer *t)
 {
@@ -295,6 +363,16 @@ cancel_send_for_window(struct rawclip_x11 *x, Window requestor)
 }
 
 static void
+cancel_send_for_selection(struct rawclip_x11 *x, Atom selection)
+{
+    struct send_transfer **link = &x->send_head;
+    while (*link != NULL) {
+        if ((*link)->selection == selection) remove_send_link(x, link);
+        else link = &(*link)->next;
+    }
+}
+
+static void
 cancel_send_all(struct rawclip_x11 *x)
 {
     while (x->send_head != NULL) remove_send_link(x, &x->send_head);
@@ -316,8 +394,9 @@ prune_send_transfers(struct rawclip_x11 *x)
 }
 
 static bool
-start_send_transfer(struct rawclip_x11 *x, Window requestor, Atom property,
-                    Atom target, const unsigned char *data, size_t len)
+start_send_transfer(struct rawclip_x11 *x, Atom selection, Window requestor,
+                    Atom property, Atom target, const unsigned char *data,
+                    size_t len)
 {
     struct send_transfer **link;
     struct send_transfer *t;
@@ -348,6 +427,7 @@ start_send_transfer(struct rawclip_x11 *x, Window requestor, Atom property,
     }
     memcpy(t->data, data, len);
     t->requestor = requestor;
+    t->selection = selection;
     t->property = property;
     t->target = target;
     t->len = len;
@@ -364,15 +444,16 @@ start_send_transfer(struct rawclip_x11 *x, Window requestor, Atom property,
 }
 
 static bool
-serve_selection_data(struct rawclip_x11 *x, Window requestor, Atom property,
-                     Atom target, const unsigned char *data, size_t len)
+serve_selection_data(struct rawclip_x11 *x, Atom selection, Window requestor,
+                     Atom property, Atom target, const unsigned char *data,
+                     size_t len)
 {
     if (len <= x->server_direct_bytes) {
         XChangeProperty(x->dpy, requestor, property, target, 8, PropModeReplace,
                         data, (int)len);
         return true;
     }
-    return start_send_transfer(x, requestor, property, target, data, len);
+    return start_send_transfer(x, selection, requestor, property, target, data, len);
 }
 
 static int
@@ -432,12 +513,21 @@ static int
 finish_text(struct rawclip_x11 *x)
 {
     int rc = 0;
+    Atom source = x->pending_selection;
     bool valid = x->buf_len > 0U && memchr(x->buf, '\0', x->buf_len) == NULL;
     if (valid && x->pending_target == x->utf8) {
         valid = rawclip_utf8_valid(x->buf, x->buf_len);
     }
     if (valid) {
-        rc = x->capture(x->userdata, (const char *)x->buf, x->buf_len, rawclip_now_ms());
+        Atom destination;
+        rc = x->capture(x->userdata, (const char *)x->buf, x->buf_len,
+                        rawclip_now_ms());
+        destination = sync_destination(x, source);
+        if (rc == 0 && destination != None) {
+            /* Selection ownership is inherently racy. History admission remains
+             * authoritative even if another client wins the destination race. */
+            (void)own_selection(x, destination, (const char *)x->buf, x->buf_len, true);
+        }
     }
     reset_receive(x);
     return rc;
@@ -633,6 +723,43 @@ server_time(struct rawclip_x11 *x)
     }
 }
 
+static int
+own_selection(struct rawclip_x11 *x, Atom selection, const char *text, size_t len,
+              bool synchronized)
+{
+    struct owned_selection *owned = owned_slot(x, selection);
+    char *copy;
+    Time t;
+
+    if (owned == NULL || text == NULL || len == 0U ||
+        len > x->cfg->max_entry_bytes || memchr(text, '\0', len) != NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (owned_selection_matches(x, selection, text, len)) {
+        if (!synchronized) owned->synchronized = false;
+        return 0;
+    }
+    copy = rawclip_xstrndup(text, len);
+    if (copy == NULL) return -1;
+    t = server_time(x);
+    XSetSelectionOwner(x->dpy, selection, x->win, t);
+    XSync(x->dpy, False);
+    if (XGetSelectionOwner(x->dpy, selection) != x->win) {
+        memset(copy, 0, len);
+        free(copy);
+        errno = EBUSY;
+        return -1;
+    }
+    cancel_send_for_selection(x, selection);
+    owned_selection_clear(owned);
+    owned->text = copy;
+    owned->len = len;
+    owned->time = t;
+    owned->synchronized = synchronized;
+    return 0;
+}
+
 static void
 selection_request(struct rawclip_x11 *x, const XSelectionRequestEvent *req)
 {
@@ -648,27 +775,35 @@ selection_request(struct rawclip_x11 *x, const XSelectionRequestEvent *req)
     out.time = req->time;
     out.property = None;
 
-    if (req->selection == x->clipboard && x->owned_text != NULL) {
-        if (req->target == x->targets) {
-            Atom list[] = {x->targets, x->timestamp, x->utf8, x->string};
-            XChangeProperty(x->dpy, req->requestor, property, XA_ATOM, 32,
-                            PropModeReplace, (unsigned char *)list, 4);
-            ok = true;
-        } else if (req->target == x->timestamp) {
-            unsigned long t = x->owned_time;
-            XChangeProperty(x->dpy, req->requestor, property, XA_INTEGER, 32,
-                            PropModeReplace, (unsigned char *)&t, 1);
-            ok = true;
-        } else if (req->target == x->utf8) {
-            ok = serve_selection_data(x, req->requestor, property, x->utf8,
-                                      (const unsigned char *)x->owned_text, x->owned_len);
-        } else if (req->target == x->string) {
-            unsigned char *latin1 = NULL;
-            size_t latin1_len = 0U;
-            if (rawclip_utf8_to_latin1(x->owned_text, x->owned_len, &latin1, &latin1_len) == 0) {
-                ok = serve_selection_data(x, req->requestor, property, x->string,
-                                          latin1, latin1_len);
-                free(latin1);
+    {
+        struct owned_selection *owned = owned_slot(x, req->selection);
+        if (owned != NULL && owned->text != NULL &&
+            XGetSelectionOwner(x->dpy, req->selection) == x->win) {
+            if (req->target == x->targets) {
+                Atom list[] = {x->targets, x->timestamp, x->utf8, x->string};
+                XChangeProperty(x->dpy, req->requestor, property, XA_ATOM, 32,
+                                PropModeReplace, (unsigned char *)list, 4);
+                ok = true;
+            } else if (req->target == x->timestamp) {
+                unsigned long t = owned->time;
+                XChangeProperty(x->dpy, req->requestor, property, XA_INTEGER, 32,
+                                PropModeReplace, (unsigned char *)&t, 1);
+                ok = true;
+            } else if (req->target == x->utf8) {
+                ok = serve_selection_data(x, req->selection, req->requestor,
+                                          property, x->utf8,
+                                          (const unsigned char *)owned->text,
+                                          owned->len);
+            } else if (req->target == x->string) {
+                unsigned char *latin1 = NULL;
+                size_t latin1_len = 0U;
+                if (rawclip_utf8_to_latin1(owned->text, owned->len, &latin1,
+                                           &latin1_len) == 0) {
+                    ok = serve_selection_data(x, req->selection, req->requestor,
+                                              property, x->string, latin1,
+                                              latin1_len);
+                    free(latin1);
+                }
             }
         }
     }
@@ -759,7 +894,8 @@ rawclip_x11_destroy(struct rawclip_x11 *x)
     if (x == NULL) return;
     reset_receive(x);
     cancel_send_all(x);
-    free(x->owned_text);
+    owned_selection_clear(&x->owned_clipboard);
+    owned_selection_clear(&x->owned_primary);
     if (x->dpy != NULL) {
         if (x->win != None) XDestroyWindow(x->dpy, x->win);
         XCloseDisplay(x->dpy);
@@ -789,11 +925,12 @@ rawclip_x11_dispatch(struct rawclip_x11 *x)
             selection_request(x, &ev.xselectionrequest);
         } else if (ev.type == DestroyNotify) {
             cancel_send_for_window(x, ev.xdestroywindow.window);
-        } else if (ev.type == SelectionClear && ev.xselectionclear.selection == x->clipboard) {
-            cancel_send_all(x);
-            free(x->owned_text);
-            x->owned_text = NULL;
-            x->owned_len = 0U;
+        } else if (ev.type == SelectionClear) {
+            struct owned_selection *owned = owned_slot(x, ev.xselectionclear.selection);
+            if (owned != NULL) {
+                cancel_send_for_selection(x, ev.xselectionclear.selection);
+                owned_selection_clear(owned);
+            }
         }
     }
     return 0;
@@ -809,47 +946,44 @@ rawclip_x11_set_paused(struct rawclip_x11 *x, bool paused)
 void
 rawclip_x11_set_config(struct rawclip_x11 *x, const struct rawclip_config *cfg)
 {
+    Atom selections[2] = {x->clipboard, x->primary};
+    size_t i;
+    for (i = 0U; i < 2U; i++) {
+        struct owned_selection *owned = owned_slot(x, selections[i]);
+        if (owned != NULL && owned->synchronized &&
+            !sync_targets_selection(cfg, selections[i], x->clipboard, x->primary)) {
+            cancel_send_for_selection(x, selections[i]);
+            if (XGetSelectionOwner(x->dpy, selections[i]) == x->win)
+                XSetSelectionOwner(x->dpy, selections[i], None, CurrentTime);
+            owned_selection_clear(owned);
+        }
+    }
     x->cfg = cfg;
+    XFlush(x->dpy);
 }
 
 int
 rawclip_x11_own_clipboard(struct rawclip_x11 *x, const char *text, size_t len)
 {
-    char *copy;
-    Time t;
-    if (text == NULL || len == 0U || len > x->cfg->max_entry_bytes ||
-        memchr(text, '\0', len) != NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-    copy = rawclip_xstrndup(text, len);
-    if (copy == NULL) return -1;
+    Atom destination;
     reset_receive(x);
-    cancel_send_all(x);
-    t = server_time(x);
-    XSetSelectionOwner(x->dpy, x->clipboard, x->win, t);
-    XSync(x->dpy, False);
-    if (XGetSelectionOwner(x->dpy, x->clipboard) != x->win) {
-        free(copy);
-        errno = EBUSY;
-        return -1;
-    }
-    free(x->owned_text);
-    x->owned_text = copy;
-    x->owned_len = len;
-    x->owned_time = t;
+    if (own_selection(x, x->clipboard, text, len, false) != 0) return -1;
+    destination = sync_destination(x, x->clipboard);
+    if (destination != None) (void)own_selection(x, destination, text, len, true);
     return 0;
 }
 
 void
 rawclip_x11_clear_owned(struct rawclip_x11 *x)
 {
+    Atom selections[2] = {x->clipboard, x->primary};
+    size_t i;
     cancel_send_all(x);
-    if (XGetSelectionOwner(x->dpy, x->clipboard) == x->win) {
-        XSetSelectionOwner(x->dpy, x->clipboard, None, CurrentTime);
-        XFlush(x->dpy);
+    for (i = 0U; i < 2U; i++) {
+        struct owned_selection *owned = owned_slot(x, selections[i]);
+        if (XGetSelectionOwner(x->dpy, selections[i]) == x->win)
+            XSetSelectionOwner(x->dpy, selections[i], None, CurrentTime);
+        if (owned != NULL) owned_selection_clear(owned);
     }
-    free(x->owned_text);
-    x->owned_text = NULL;
-    x->owned_len = 0U;
+    XFlush(x->dpy);
 }
