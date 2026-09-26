@@ -48,6 +48,15 @@ main(int argc, char **argv)
     int fd;
 
     if (argc != 2) return 2;
+    if (strcmp(argv[1], "path") == 0) {
+        char path[sizeof(((struct sockaddr_un *)0)->sun_path)];
+        if (rawclip_ipc_socket_path(path, sizeof(path), NULL) != 0) {
+            perror("ipc-probe: path");
+            return 1;
+        }
+        puts(path);
+        return 0;
+    }
     fd = connect_daemon();
     if (fd < 0) {
         perror("ipc-probe: connect");

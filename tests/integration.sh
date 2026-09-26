@@ -40,8 +40,8 @@ if XDG_RUNTIME_DIR="$state/unsafe-runtime" "$rawclip" health >"$state/unsafe.out
 fi
 grep -q 'Operation not permitted' "$state/unsafe.err"
 
-display_key=$(printf '%s' "$DISPLAY" | sed 's/[^A-Za-z0-9_-]/_/g')
-lock_path="$XDG_RUNTIME_DIR/rawclip-$display_key.sock.lock"
+socket_path=$("$ipc_probe" path)
+lock_path="$socket_path.lock"
 : >"$lock_path"
 chmod 0666 "$lock_path"
 
@@ -87,6 +87,7 @@ for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
 done
 "$rawclip" status | grep -q 'paused=0 entries=0'
 [ "$("$rawclip" health)" = 'ok' ]
+[ "$(DISPLAY="${DISPLAY}.1" "$rawclip" health)" = 'ok' ]
 [ "$(stat -c '%a' "$lock_path")" = '600' ]
 if "$rawclipd" -c "$state/rawclip.conf" >"$state/second-daemon.out" 2>"$state/second-daemon.err"; then
     echo 'second rawclipd instance unexpectedly started' >&2

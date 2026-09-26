@@ -19,6 +19,7 @@ main(void)
     int sv[2];
     struct rawclip_ipc_frame frame;
     char path[256];
+    char other[256];
     char runtime[] = "/tmp/rawclip-ipc-test.XXXXXX";
     unsigned char bad[12] = {0};
 
@@ -72,11 +73,20 @@ main(void)
     assert(setenv("XDG_RUNTIME_DIR", runtime, 1) == 0);
     assert(rawclip_ipc_validate_runtime_dir() == 0);
     assert(rawclip_ipc_socket_path(path, sizeof(path), ":0.0") == 0);
+    assert(rawclip_ipc_socket_path(other, sizeof(other), ":0.1") == 0);
+    assert(strcmp(path, other) == 0);
+    assert(rawclip_ipc_socket_path(other, sizeof(other), ":0") == 0);
+    assert(strcmp(path, other) == 0);
     {
         char expected[512];
-        assert(snprintf(expected, sizeof(expected), "%s/rawclip-_0_0.sock", runtime) > 0);
+        assert(snprintf(expected, sizeof(expected), "%s/rawclip-_0.sock", runtime) > 0);
         assert(strcmp(path, expected) == 0);
     }
+    assert(rawclip_ipc_socket_path(other, sizeof(other), "unix/:0") == 0);
+    assert(strcmp(path, other) != 0);
+    assert(strstr(other, "rawclip-unix~2f_0.sock") != NULL);
+    assert(rawclip_ipc_socket_path(other, sizeof(other), "unix_:0") == 0);
+    assert(strstr(other, "rawclip-unix~5f_0.sock") != NULL);
     assert(chmod(runtime, 0770) == 0);
     errno = 0;
     assert(rawclip_ipc_validate_runtime_dir() == -1);

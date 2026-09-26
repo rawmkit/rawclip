@@ -152,33 +152,78 @@ rawclip_ipc_frame_destroy(struct rawclip_ipc_frame *frame)
     memset(frame, 0, sizeof(*frame));
 }
 
+static size_t
+display_server_len(const char *display)
+{
+    const char *colon;
+    const char *dot;
+    const char *p;
+
+    colon = strrchr(display, ':');
+    dot = strrchr(display, '.');
+    if (colon == NULL || dot == NULL || dot <= colon || dot[1] == '\0') {
+        return strlen(display);
+    }
+    for (p = dot + 1; *p != '\0'; p++) {
+        if (*p < '0' || *p > '9') return strlen(display);
+    }
+    return (size_t)(dot - display);
+}
+
+static int
+encode_display_server(const char *display, char *buf, size_t size)
+{
+    static const char hex[] = "0123456789abcdef";
+    size_t in_len;
+    size_t i;
+    size_t j = 0U;
+
+    if (display == NULL || *display == '\0' || buf == NULL || size == 0U) {
+        errno = ENOENT;
+        return -1;
+    }
+    in_len = display_server_len(display);
+    for (i = 0U; i < in_len; i++) {
+        unsigned char c = (unsigned char)display[i];
+        bool plain = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                     (c >= '0' && c <= '9') || c == '-';
+        size_t need = plain || c == ':' ? 1U : 3U;
+
+        if (need > size - j - 1U) {
+            errno = ENAMETOOLONG;
+            return -1;
+        }
+        if (plain) {
+            buf[j++] = (char)c;
+        } else if (c == ':') {
+            buf[j++] = '_';
+        } else {
+            buf[j++] = '~';
+            buf[j++] = hex[(c >> 4U) & 0x0fU];
+            buf[j++] = hex[c & 0x0fU];
+        }
+    }
+    if (j == 0U) {
+        errno = EINVAL;
+        return -1;
+    }
+    buf[j] = '\0';
+    return 0;
+}
+
 int
 rawclip_ipc_socket_path(char *buf, size_t size, const char *display)
 {
     const char *runtime = getenv("XDG_RUNTIME_DIR");
     const char *d = display != NULL ? display : getenv("DISPLAY");
     char clean[96];
-    size_t i, j = 0U;
     int n;
 
     if (runtime == NULL || runtime[0] != '/' || d == NULL || *d == '\0') {
         errno = ENOENT;
         return -1;
     }
-    for (i = 0U; d[i] != '\0' && j + 1U < sizeof(clean); i++) {
-        unsigned char c = (unsigned char)d[i];
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-            (c >= '0' && c <= '9') || c == '_' || c == '-') {
-            clean[j++] = (char)c;
-        } else {
-            clean[j++] = '_';
-        }
-    }
-    if (d[i] != '\0') {
-        errno = ENAMETOOLONG;
-        return -1;
-    }
-    clean[j] = '\0';
+    if (encode_display_server(d, clean, sizeof(clean)) != 0) return -1;
     n = snprintf(buf, size, "%s/rawclip-%s.sock", runtime, clean);
     if (n < 0 || (size_t)n >= size) {
         errno = ENAMETOOLONG;
