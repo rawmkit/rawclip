@@ -1,3 +1,34 @@
+rawclip 0.3.0 — 2026-09-26
+==========================
+
+X11 transfer authority
+----------------------
+
+* Serve replayed UTF8_STRING and representable STRING values through ICCCM
+  `INCR` when they exceed a safe direct X property update.
+* Snapshot large replay payloads per requestor, bound concurrent transfer state,
+  expire inactive transfers on later activity, and discard transfer state when
+  requestor windows disappear or CLIPBOARD authority changes.
+* Remove the X server direct-request limit from capture admission. Incoming
+  direct and INCR values are governed by `history.max_entry_bytes`; the server
+  request size now only determines outgoing chunk size.
+
+Testing
+-------
+
+* Exercise a 400 KiB value through incoming INCR, history storage, outgoing
+  UTF8_STRING and STRING INCR replay, and two simultaneous requestors.
+* Repeatedly abort requestors mid-transfer and require later replay to succeed,
+  covering bounded-state cleanup rather than only successful transfers.
+* Probe TARGETS, TIMESTAMP, and unsupported-target behavior while rawclip owns
+  CLIPBOARD.
+
+Documentation
+-------------
+
+* Define the bidirectional transfer boundary and record automatic PRIMARY to
+  CLIPBOARD synchronization as a separate future opt-in policy.
+
 rawclip 0.2.1 — 2026-09-26
 ==========================
 

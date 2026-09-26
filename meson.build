@@ -1,7 +1,7 @@
 project(
   'rawclip',
   'c',
-  version: '0.2.1',
+  version: '0.3.0',
   license: 'MIT',
   meson_version: '>=1.6.0',
   default_options: [
