@@ -80,10 +80,12 @@ rawclipd &
 ```
 
 The daemon creates one mode-0600 control socket per X display under
-`$XDG_RUNTIME_DIR`. A stable per-display lock file serializes daemon startup and
-is intentionally retained in the runtime directory across daemon exits. The runtime directory must be absolute, owned by the
-current user, and not group/world writable. Control clients are authenticated
-with Linux peer credentials.
+`$XDG_RUNTIME_DIR`. A stable per-display mode-0600 lock file serializes daemon
+startup and is intentionally retained in the runtime directory across daemon
+exits. Both `rawclipd` and `rawclip` require the runtime directory to be absolute,
+owned by the current user, and not group/world writable. On Linux each side
+verifies the peer UID, so neither the daemon nor the control client accepts a
+local endpoint owned by another user.
 
 ## Commands
 
@@ -108,9 +110,11 @@ rawclip reload
 ```
 
 `rawclip list` prints stable history IDs, a pin marker (`*` pinned, `-`
-unpinned), and a single-line human preview. `rawclip show ID` writes the exact
-stored text bytes. `rawclip select ID` asks `rawclipd` to become the X11
-`CLIPBOARD` owner for that entry.
+unpinned), and a single-line human preview. Entry IDs accepted on the command
+line are nonzero ASCII decimal numbers; signs, whitespace and overflow are
+command-line misuse. `rawclip show ID` writes the exact stored text bytes.
+`rawclip select ID` asks `rawclipd` to become the X11 `CLIPBOARD` owner for that
+entry.
 
 `rawclip pin ID` protects an entry from automatic history eviction. `unpin`
 removes that protection. Pin state is intentionally memory-only and disappears
@@ -169,8 +173,9 @@ Validate one file without connecting to X:
 rawclipd -C -c ./rawclip.conf
 ```
 
-The parser is strict. Unknown top-level or nested settings, wrong scalar types,
-empty exclusion rules, and impossible selection policy are errors.
+The parser is strict. Unknown top-level or nested settings, wrong scalar types
+(including every supplied exclusion-rule field), empty exclusion rules, and
+impossible selection policy are errors.
 
 Default policy:
 
@@ -214,9 +219,11 @@ selection.
 rawclip suppresses its own XFixes ownership events and avoids re-owning an
 already identical destination value. Explicit history replay remains CLIPBOARD
 authority; when clipboard-to-primary synchronization is enabled the same replay
-is also mirrored to PRIMARY. Tightening synchronization policy on reload releases
-selection ownership acquired only by synchronization while preserving explicit
-CLIPBOARD replay.
+is also mirrored to PRIMARY. Reload first aborts any in-flight external capture,
+then installs the new policy, so bytes admitted under an older exclusion,
+sensitive, selection or size policy cannot complete under the new policy epoch.
+Tightening synchronization policy releases selection ownership acquired only by
+synchronization while preserving explicit CLIPBOARD replay.
 
 ### Exclusion rules
 
@@ -249,12 +256,15 @@ validated before history admission. `STRING` data is interpreted as ISO-8859-1
 and normalized to UTF-8. Replay advertises `UTF8_STRING`; `STRING` is produced
 only when every stored code point is representable as ISO-8859-1.
 
-Both incoming and outgoing X11 `INCR` transfers are supported. History
-admission is bounded by `history.max_entry_bytes`, not by the X server's
-single-request property limit. When rawclip owns `CLIPBOARD`, values larger
-than a safe direct property update are streamed incrementally to requestors.
-Outgoing transfers are bounded and abandoned requestors are discarded.
-Oversized selections are ignored rather than truncated.
+Both incoming and outgoing X11 `INCR` transfers are supported. Incoming
+framing is validated exactly: the INCR header must have the required 32-bit
+shape and every data chunk, including the zero-length terminator, must retain the
+negotiated text type and 8-bit format. History admission is bounded by
+`history.max_entry_bytes`, not by the X server's single-request property limit.
+When rawclip owns a selection, values larger than a safe direct property update
+are streamed incrementally to requestors. Outgoing transfers are bounded and
+abandoned requestors are discarded. Oversized selections are ignored rather
+than truncated.
 
 Images, HTML, URI lists and arbitrary MIME graphs remain out of scope.
 
@@ -269,7 +279,8 @@ is opt-in and `none` remains the default.
 pinned-entry counts, current rawclip-owned selections, pending receive state,
 and outgoing INCR transfer count. `rawclip health` is the smaller supervision
 probe: success means the daemon accepted and serviced an authenticated request
-in its event loop.
+in its event loop. Local control exchanges have bounded socket I/O and a client
+which disconnects before a reply cannot terminate the daemon.
 
 Tightening history limits on reload may evict unpinned entries immediately. A
 reload that would require evicting a pinned entry, or make a pinned entry exceed
@@ -292,6 +303,9 @@ audited authority rather than a hidden default.
 * `0` for success or menu cancellation;
 * `1` for runtime/configuration/daemon failures;
 * `2` for command-line misuse.
+
+`-v` is a standalone form. `rawclip -c PATH` is valid only with `menu`; it is
+local menu policy and never changes daemon configuration.
 
 Human-readable diagnostics are not a machine-readable protocol. Local IPC is
 private to matching rawclip/rawclipd versions and is not a public ABI.

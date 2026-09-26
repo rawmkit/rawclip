@@ -10,7 +10,8 @@ Configuration uses libconfig syntax. Defaults are compiled in. Without an
 explicit *-c* path, rawclip layers /etc/rawclip/rawclip.conf and the XDG user
 configuration.
 
-Unknown keys and wrong scalar types are errors.
+Unknown keys and wrong scalar types are errors, including known fields inside
+exclusion-rule groups.
 
 # HISTORY
 

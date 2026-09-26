@@ -41,7 +41,8 @@ bindings belong to the surrounding desktop/window-manager configuration.
 *SIGHUP*
 	Reload configuration atomically. A failed reload leaves existing live
 	policy in place. History-limit changes which would evict pinned entries are
-	rejected.
+	rejected. Any in-flight external capture is aborted before a successfully
+	parsed new policy becomes live.
 
 *SIGINT*, *SIGTERM*
 	Stop the daemon and destroy in-memory history.
@@ -56,7 +57,10 @@ metadata. Selection synchronization runs only after those admission checks, so
 rejected offers are not mirrored to the opposite selection.
 
 The control socket requires an absolute user-owned non-group/world-writable
-XDG_RUNTIME_DIR, is mode 0600, and validates Linux peer credentials.
+XDG_RUNTIME_DIR, is mode 0600, and validates Linux peer credentials. The
+per-display singleton lock is normalized to mode 0600. Local client I/O is
+bounded so partial or disconnected control exchanges cannot terminate or wedge
+the daemon indefinitely.
 
 # EXIT STATUS
 

@@ -31,7 +31,9 @@ monitor X11 selections itself and does not own persistent history.
 	single-line human previews.
 
 *show* _id_
-	Write the exact stored text bytes for one entry.
+	Write the exact stored text bytes for one entry. IDs are nonzero ASCII
+	decimal numbers; signed, whitespace-prefixed, zero, or overflowing values are
+	command-line misuse.
 
 *select* _id_
 	Make rawclipd the CLIPBOARD owner for one history entry. When configured,
@@ -68,12 +70,13 @@ monitor X11 selections itself and does not own persistent history.
 # OPTIONS
 
 *-c* _path_
-	Use _path_ for local menu policy instead of normal system/XDG layers. This
-	does not change the already-running daemon's policy; use *reload* after
-	changing daemon configuration.
+	Use _path_ for local *menu* policy instead of normal system/XDG layers. This
+	option is accepted only with the *menu* command and does not change the
+	already-running daemon's policy; use *reload* after changing daemon
+	configuration.
 
 *-v*
-	Print the program version.
+	Print the program version. This is a standalone form.
 
 # EXIT STATUS
 
@@ -83,7 +86,9 @@ monitor X11 selections itself and does not own persistent history.
 # FILES
 
 _$XDG_RUNTIME_DIR/rawclip-DISPLAY.sock_
-	Private per-display control socket.
+	Private per-display control socket. The runtime directory must be absolute,
+	owned by the current user, and not group/world writable. On Linux the client
+	verifies the connected daemon UID with SO_PEERCRED.
 
 # SEE ALSO
 

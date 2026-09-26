@@ -61,9 +61,12 @@ reject an owner using sensitive-target metadata or configured owner rules.
 `UTF8_STRING` input is validated. `STRING` is interpreted as ISO-8859-1 and
 normalized to UTF-8. Embedded NUL bytes are rejected.
 
-Incoming INCR transfers are accumulated under the configured byte bound.
-Malformed type changes, invalid UTF-8, oversized payloads, empty payloads, and
-owner races are discarded rather than partially stored.
+Incoming INCR transfers are accumulated under the configured byte bound. The
+initial INCR property must have the required 32-bit shape, and every subsequent
+chunk including the terminal empty property must retain the negotiated text type
+and 8-bit format. Malformed framing or type changes, invalid UTF-8, oversized
+payloads, empty payloads, and owner races are discarded rather than partially
+stored.
 
 Source windows may disappear during metadata queries. rawclip installs a
 non-fatal X error handler so asynchronous `BadWindow` races do not invoke
@@ -117,19 +120,26 @@ current user, and not group/world writable. The socket mode is 0600. A stable mo
 directory serializes daemon startup; it is reused rather than unlinked on exit
 so lock authority cannot move to a new inode during a successor race.
 
-On Linux, rawclipd verifies `SO_PEERCRED` and requires the connecting process UID
-to match the daemon UID. IPC frames contain a fixed magic, version, type and
-32-bit bounded length in network byte order. Oversized or malformed frames are
-rejected before payload allocation.
+On Linux, peer authentication is symmetric: rawclipd verifies the connecting
+client UID with `SO_PEERCRED`, while rawclip verifies that the connected daemon
+UID matches its own. Both sides reject an unsafe runtime directory before using
+the socket. IPC frames contain a fixed magic, version, type and 32-bit bounded
+length in network byte order. Oversized or malformed frames are rejected before
+payload allocation. Accepted daemon-side clients have bounded send/receive I/O;
+a stalled partial frame or a client which closes before its reply is contained
+to that exchange rather than terminating the service.
 
 The IPC protocol is private implementation detail and may change between
 pre-1.0 releases.
 
 ## Configuration
 
-libconfig policy is strict. Unknown keys and wrong scalar types are errors.
-An explicit `-c` file replaces system/XDG layers. Reload parses a complete new
-configuration before replacing live policy.
+libconfig policy is strict. Unknown keys and wrong scalar types are errors,
+including mistyped fields inside exclusion rules. An explicit `-c` file replaces
+system/XDG layers. Reload parses a complete new configuration, aborts any
+in-flight external selection receive, then replaces live policy. This prevents a
+transfer admitted under an older policy epoch from completing under new
+exclusion, sensitive, selection or byte-limit policy.
 
 Tightening history limits during reload may immediately evict unpinned entries
 which no longer satisfy the new bounds. Pinned entries are automatic-eviction
