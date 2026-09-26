@@ -31,7 +31,7 @@ done
 "$helper" ping
 
 cat >"$state/rawclip.conf" <<EOF2
-history = { max_entries = 8; max_entry_bytes = 4096; deduplicate = true; };
+history = { max_entries = 8; max_entry_bytes = 524288; deduplicate = true; };
 selection = { clipboard = true; primary = false; };
 security = { honor_password_manager_hint = true; };
 menu = { command = "$state/fake-menu"; prompt = "clipboard"; };
@@ -132,6 +132,47 @@ owner_pid=
 
 "$rawclip" delete "$id"
 [ -z "$("$rawclip" list)" ]
+
+# Large clipboard values cross both sides of the ICCCM INCR boundary.
+large_bytes=400000
+dd if=/dev/zero bs="$large_bytes" count=1 2>/dev/null | tr '\000' L >"$state/large.expected"
+"$helper" offer-size "$large_bytes" >"$state/large-owner.out" &
+owner_pid=$!
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
+    line=$("$rawclip" list)
+    [ -n "$line" ] && break || sleep 0.05
+done
+[ -n "${line:-}" ]
+id=${line%%	*}
+"$rawclip" show "$id" >"$state/large.show"
+cmp "$state/large.expected" "$state/large.show"
+kill "$owner_pid"
+wait "$owner_pid"
+owner_pid=
+grep -q '^text_requests=1$' "$state/large-owner.out"
+
+"$rawclip" -c "$state/rawclip.conf" menu
+"$helper" probe-owner
+"$helper" paste-string >"$state/large.paste.string"
+cmp "$state/large.expected" "$state/large.paste.string"
+"$helper" paste >"$state/large.paste.1" &
+paste1=$!
+"$helper" paste >"$state/large.paste.2" &
+paste2=$!
+wait "$paste1"
+wait "$paste2"
+cmp "$state/large.expected" "$state/large.paste.1"
+cmp "$state/large.expected" "$state/large.paste.2"
+
+# Aborted INCR requestors must not consume the bounded transfer table.
+i=0
+while [ "$i" -lt 20 ]; do
+    "$helper" paste-abort >/dev/null
+    i=$((i + 1))
+done
+"$helper" paste >"$state/large.paste.after-abort"
+cmp "$state/large.expected" "$state/large.paste.after-abort"
+
 "$rawclip" clear
 "$rawclip" reload
 
