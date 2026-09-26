@@ -82,7 +82,7 @@ kill "$owner_pid"
 wait "$owner_pid"
 owner_pid=
 
-"$rawclip" menu
+"$rawclip" -c "$state/rawclip.conf" menu
 [ "$("$helper" paste)" = 'alpha-value' ]
 "$rawclip" show "$id" | grep -q '^alpha-value$'
 
