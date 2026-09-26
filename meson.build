@@ -91,6 +91,13 @@ ipc_test = executable(
 )
 test('ipc', ipc_test)
 
+util_test = executable(
+  'util-test',
+  ['tests/util-test.c', 'src/util.c'],
+  include_directories: inc,
+)
+test('util', util_test)
+
 test(
   'config',
   executable(

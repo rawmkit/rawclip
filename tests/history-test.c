@@ -36,7 +36,9 @@ main(void)
     assert(errno == EINVAL);
     assert(rawclip_history_add(&h, "oversized", 9U, 5U, NULL) == -1);
 
-    assert(rawclip_history_delete(&h, a) == 0);
+    rawclip_history_reconfigure(&h, 1U, 4U, true);
+    assert(h.len == 0U);
+
     assert(rawclip_history_get(&h, a) == NULL);
     rawclip_history_clear(&h);
     assert(h.len == 0U);

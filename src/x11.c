@@ -66,6 +66,14 @@ struct rawclip_x11 {
     Time owned_time;
 };
 
+static int
+x_error_handler(Display *dpy, XErrorEvent *event)
+{
+    (void)dpy;
+    (void)event;
+    return 0;
+}
+
 static void
 set_error(char *err, size_t size, const char *fmt, ...)
 {
@@ -252,7 +260,11 @@ static int
 finish_text(struct rawclip_x11 *x)
 {
     int rc = 0;
-    if (x->buf_len > 0U && memchr(x->buf, '\0', x->buf_len) == NULL) {
+    bool valid = x->buf_len > 0U && memchr(x->buf, '\0', x->buf_len) == NULL;
+    if (valid && x->pending_target == x->utf8) {
+        valid = rawclip_utf8_valid(x->buf, x->buf_len);
+    }
+    if (valid) {
         rc = x->capture(x->userdata, (const char *)x->buf, x->buf_len, rawclip_now_ms());
     }
     reset_receive(x);
@@ -365,6 +377,8 @@ property_notify(struct rawclip_x11 *x, const XPropertyEvent *ev)
         rc = finish_text(x);
     } else if (format != 8 || data == NULL) {
         reset_receive(x);
+    } else if (actual != x->pending_target) {
+        reset_receive(x);
     } else if (x->pending_target == x->string) {
         char *utf8 = NULL;
         size_t utf8_len = 0U;
@@ -373,7 +387,7 @@ property_notify(struct rawclip_x11 *x, const XPropertyEvent *ev)
             reset_receive(x);
         }
         free(utf8);
-    } else if (!rawclip_utf8_valid(data, (size_t)nitems) || append_receive(x, data, (size_t)nitems) != 0) {
+    } else if (append_receive(x, data, (size_t)nitems) != 0) {
         reset_receive(x);
     }
     if (data != NULL) XFree(data);
@@ -470,6 +484,7 @@ rawclip_x11_create(const struct rawclip_config *cfg, rawclip_capture_fn capture,
         errno = ENODEV;
         return NULL;
     }
+    XSetErrorHandler(x_error_handler);
     if (!XFixesQueryExtension(x->dpy, &x->xfixes_event_base, &error_base)) {
         set_error(err, err_size, "XFixes extension is unavailable");
         XCloseDisplay(x->dpy);

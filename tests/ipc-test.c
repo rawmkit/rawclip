@@ -33,6 +33,18 @@ main(void)
     close(sv[0]);
     close(sv[1]);
 
+    {
+        unsigned char *payload = NULL;
+        uint32_t payload_len = 0U;
+        uint64_t id, ts;
+        const char *text;
+        size_t text_len;
+        assert(rawclip_ipc_pack_entry(42U, 99U, "abc", 3U, &payload, &payload_len) == 0);
+        assert(rawclip_ipc_unpack_entry(payload, payload_len, &id, &ts, &text, &text_len) == 0);
+        assert(id == 42U && ts == 99U && text_len == 3U && memcmp(text, "abc", 3U) == 0);
+        free(payload);
+    }
+
     assert(setenv("XDG_RUNTIME_DIR", "/tmp/runtime-test", 1) == 0);
     assert(rawclip_ipc_socket_path(path, sizeof(path), ":0.0") == 0);
     assert(strcmp(path, "/tmp/runtime-test/rawclip-_0_0.sock") == 0);
