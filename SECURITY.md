@@ -86,6 +86,30 @@ all discard associated transfer state.
 The configured history byte bound, rather than the X server's direct request
 size, is therefore the admission authority for both incoming and replayed text.
 
+## Selection synchronization
+
+PRIMARY and CLIPBOARD are independent X11 selections. Monitoring a selection
+only admits its ordinary text into history; synchronization additionally makes
+rawclip the owner of the configured destination selection. Synchronization is
+therefore disabled by default.
+
+The supported directions are `primary-to-clipboard`, `clipboard-to-primary`,
+and `bidirectional`. Each direction requires its source selection to be monitored.
+An admitted source is synchronized only after sensitive-hint policy, application
+exclusion, text validation, and bounded history admission have succeeded. A
+`secret` password-manager offer, malformed hint, excluded owner, or invalid text
+never reaches the synchronization path.
+
+Self-generated XFixes owner notifications are ignored and an identical value
+already owned by rawclip is not reasserted. This suppresses rawclip's own
+PRIMARY/CLIPBOARD feedback loop; it does not attempt to coordinate policy with
+other clipboard synchronizers in the same X session.
+
+Ownership records distinguish explicit CLIPBOARD history replay from ownership
+created by synchronization. When a reload disables or reverses synchronization,
+rawclip releases stale synchronization-owned selections but preserves explicit
+CLIPBOARD replay.
+
 ## Local control socket
 
 The socket lives under `$XDG_RUNTIME_DIR`, which must be absolute, owned by the
@@ -126,8 +150,7 @@ window manager.
 
 ## Out of scope
 
-* persistence or synchronized history;
-* automatic `PRIMARY`/`CLIPBOARD` synchronization;
+* persistent or cross-session synchronized history;
 * encryption-at-rest;
 * arbitrary MIME/image/HTML history;
 * Wayland;

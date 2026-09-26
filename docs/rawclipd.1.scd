@@ -16,8 +16,9 @@ rawclipd - X11 clipboard history and replay service
 
 *rawclipd* monitors configured X11 selections with XFixes, applies capture
 policy before requesting text, stores bounded history in memory, and serves
-selected entries as the CLIPBOARD owner. Direct and ICCCM INCR transfers are
-supported in both capture and replay directions.
+selected entries as the CLIPBOARD owner. Optional policy can synchronize admitted
+PRIMARY and CLIPBOARD text in either direction. Direct and ICCCM INCR transfers
+are supported in both capture and replay directions.
 
 The daemon remains in the foreground. Session startup and global keyboard
 bindings belong to the surrounding desktop/window-manager configuration.
@@ -49,7 +50,8 @@ Offers advertising *x-kde-passwordManagerHint* are queried before text when
 the default sensitive policy is enabled. The exact value *secret* is rejected
 without requesting clipboard text; an unreadable advertised hint fails closed.
 Application exclusion rules are secondary advisory policy based on X11 owner
-metadata.
+metadata. Selection synchronization runs only after those admission checks, so
+rejected offers are not mirrored to the opposite selection.
 
 The control socket requires an absolute user-owned non-group/world-writable
 XDG_RUNTIME_DIR, is mode 0600, and validates Linux peer credentials.

@@ -33,7 +33,15 @@ Unknown keys and wrong scalar types are errors.
 *selection.primary* = boolean
 	Monitor PRIMARY. Default: false.
 
-At least one monitored selection must remain enabled.
+*selection.synchronize* = string
+	Synchronize admitted text between X11 selections. Supported values are
+	*none*, *primary-to-clipboard*, *clipboard-to-primary*, and *bidirectional*.
+	Default: *none*. Each direction requires its source selection to be monitored.
+
+At least one monitored selection must remain enabled. Synchronization happens
+only after normal sensitive/exclusion/text/history admission policy succeeds.
+PRIMARY-to-CLIPBOARD synchronization can make highlighted text explicitly
+pasteable without a copy action and is therefore opt-in.
 
 # SECURITY
 

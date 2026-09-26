@@ -30,19 +30,22 @@ monitor X11 selections itself and does not own persistent history.
 	Write the exact stored text bytes for one entry.
 
 *select* _id_
-	Make rawclipd the CLIPBOARD owner for one history entry.
+	Make rawclipd the CLIPBOARD owner for one history entry. When configured,
+	clipboard-to-primary synchronization mirrors the replay to PRIMARY.
 
 *delete* _id_
 	Delete one history entry.
 
 *clear*
-	Delete all history and release CLIPBOARD when rawclipd currently owns it.
+	Delete all history and release CLIPBOARD or PRIMARY selections currently owned
+	by rawclipd.
 
 *pause*, *resume*, *toggle*
 	Control capture without destroying existing history.
 
 *status*
-	Print daemon pause/history status.
+	Print daemon pause/history status plus active CLIPBOARD/PRIMARY monitor flags
+	and synchronization mode.
 
 *reload*
 	Ask rawclipd to atomically reload its configuration.

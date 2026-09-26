@@ -160,6 +160,7 @@ history = {
 selection = {
     clipboard = true;
     primary = false;
+    synchronize = "none";
 };
 
 security = {
@@ -176,7 +177,21 @@ exclude = ();
 
 `PRIMARY` is disabled by default because ordinary X selection semantics can
 capture text merely by highlighting it. `CLIPBOARD` corresponds to explicit
-copy/paste intent.
+copy/paste intent. Synchronization is also disabled by default.
+
+`selection.synchronize` accepts `none`, `primary-to-clipboard`,
+`clipboard-to-primary`, and `bidirectional`. A direction is valid only when its
+source selection is monitored. Synchronization happens only after an offer has
+passed sensitive-hint, exclusion, text-validation, and history-admission policy.
+Secret or excluded offers therefore never become authority for the opposite
+selection.
+
+rawclip suppresses its own XFixes ownership events and avoids re-owning an
+already identical destination value. Explicit history replay remains CLIPBOARD
+authority; when clipboard-to-primary synchronization is enabled the same replay
+is also mirrored to PRIMARY. Tightening synchronization policy on reload releases
+selection ownership acquired only by synchronization while preserving explicit
+CLIPBOARD replay.
 
 ### Exclusion rules
 
@@ -218,13 +233,15 @@ Oversized selections are ignored rather than truncated.
 
 Images, HTML, URI lists and arbitrary MIME graphs remain out of scope.
 
-## Selection roadmap
+## Selection policy
 
-`PRIMARY` monitoring already exists as an independent opt-in capture source.
-Automatic synchronization between `PRIMARY` and `CLIPBOARD` is intentionally
-not implemented yet. If added, it will be a separate opt-in policy because
-selection-to-clipboard synchronization changes ordinary highlight semantics and
-can cause text to become explicitly pasteable without a copy action.
+`PRIMARY` can be monitored independently without synchronization. Synchronizing
+PRIMARY to CLIPBOARD is a stronger policy: highlighted text can become explicitly
+pasteable without a copy action. For that reason every synchronization direction
+is opt-in and `none` remains the default.
+
+`rawclip status` reports the live monitor flags and synchronization mode so a
+policy reload can be verified without inferring state from clipboard behavior.
 
 ## Persistence
 
