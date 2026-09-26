@@ -343,19 +343,35 @@ main(int argc, char **argv)
     sigaction(SIGHUP, &sa, NULL);
 
     while (!want_stop) {
+        /* Synchronous Xlib requests made while handling IPC may pull events
+         * into Xlib's user-space queue. Drain that queue before sleeping on
+         * the connection fd so already-buffered ownership changes cannot wait
+         * indefinitely for unrelated kernel activity. */
+        if (rawclip_x11_dispatch(st.x11) != 0) {
+            fprintf(stderr, "rawclipd: X11 event processing failed\n");
+            goto out;
+        }
+        if (want_reload) {
+            want_reload = 0;
+            (void)reload_config(&st);
+        }
         fds[0].fd = rawclip_x11_fd(st.x11);
         fds[0].events = POLLIN;
+        fds[0].revents = 0;
         fds[1].fd = st.listen_fd;
         fds[1].events = POLLIN;
+        fds[1].revents = 0;
         if (poll(fds, 2, -1) < 0) {
-            if (errno == EINTR) {
-                if (want_reload) {
-                    want_reload = 0;
-                    (void)reload_config(&st);
-                }
-                continue;
-            }
+            if (errno == EINTR) continue;
             fprintf(stderr, "rawclipd: poll: %s\n", strerror(errno));
+            goto out;
+        }
+        if ((fds[0].revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
+            fprintf(stderr, "rawclipd: X11 connection became unavailable\n");
+            goto out;
+        }
+        if ((fds[1].revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
+            fprintf(stderr, "rawclipd: control socket became unavailable\n");
             goto out;
         }
         if ((fds[0].revents & POLLIN) != 0 && rawclip_x11_dispatch(st.x11) != 0) {
@@ -368,11 +384,10 @@ main(int argc, char **argv)
                 bound_client_io(client);
                 (void)handle_client(&st, client);
                 close(client);
+            } else if (errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK) {
+                fprintf(stderr, "rawclipd: accept: %s\n", strerror(errno));
+                goto out;
             }
-        }
-        if (want_reload) {
-            want_reload = 0;
-            (void)reload_config(&st);
         }
     }
     rc = 0;

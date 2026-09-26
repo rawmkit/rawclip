@@ -30,6 +30,19 @@ for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
 done
 "$helper" ping
 
+# Client and daemon control authority require a private runtime directory.
+mkdir -m 770 "$state/unsafe-runtime"
+if XDG_RUNTIME_DIR="$state/unsafe-runtime" "$rawclip" health >"$state/unsafe.out" 2>"$state/unsafe.err"; then
+    echo 'rawclip accepted a group-writable runtime directory' >&2
+    exit 1
+fi
+grep -q 'Operation not permitted' "$state/unsafe.err"
+
+display_key=$(printf '%s' "$DISPLAY" | sed 's/[^A-Za-z0-9_-]/_/g')
+lock_path="$XDG_RUNTIME_DIR/rawclip-$display_key.sock.lock"
+: >"$lock_path"
+chmod 0666 "$lock_path"
+
 cat >"$state/rawclip.conf" <<EOF2
 history = { max_entries = 8; max_entry_bytes = 524288; deduplicate = true; };
 selection = { clipboard = true; primary = false; };
@@ -68,6 +81,7 @@ for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
 done
 "$rawclip" status | grep -q 'paused=0 entries=0'
 [ "$("$rawclip" health)" = 'ok' ]
+[ "$(stat -c '%a' "$lock_path")" = '600' ]
 if "$rawclipd" -c "$state/rawclip.conf" >"$state/second-daemon.out" 2>"$state/second-daemon.err"; then
     echo 'second rawclipd instance unexpectedly started' >&2
     exit 1
@@ -156,6 +170,7 @@ mv "$state/rawclip.conf.before-epoch" "$state/rawclip.conf"
 owner_pid=$!
 sleep 0.15
 ! "$rawclip" list | grep -q 'bad-incr-header-value'
+"$rawclip" status | grep -q 'receive_pending=0'
 [ "$("$rawclip" health)" = 'ok' ]
 kill "$owner_pid"
 wait "$owner_pid"
