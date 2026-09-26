@@ -1,0 +1,61 @@
+rawclipd(1)
+
+# NAME
+
+rawclipd - X11 clipboard history and replay service
+
+# SYNOPSIS
+
+*rawclipd* [*-c* _path_]
+
+*rawclipd* *-C* *-c* _path_
+
+*rawclipd* *-v*
+
+# DESCRIPTION
+
+*rawclipd* monitors configured X11 selections with XFixes, applies capture
+policy before requesting text, stores bounded history in memory, and serves
+selected entries as the CLIPBOARD owner.
+
+The daemon remains in the foreground. Session startup and global keyboard
+bindings belong to the surrounding desktop/window-manager configuration.
+
+# OPTIONS
+
+*-c* _path_
+	Use only the explicit configuration file instead of system/XDG layers.
+
+*-C*
+	Validate the file supplied by *-c* without opening the X display or starting
+	the daemon.
+
+*-v*
+	Print the program version.
+
+# SIGNALS
+
+*SIGHUP*
+	Reload configuration atomically. A failed reload leaves existing live
+	policy in place.
+
+*SIGINT*, *SIGTERM*
+	Stop the daemon and destroy in-memory history.
+
+# SECURITY
+
+Offers advertising *x-kde-passwordManagerHint* are rejected before text is
+requested when the default sensitive policy is enabled. Application exclusion
+rules are secondary advisory policy based on X11 owner metadata.
+
+The control socket requires an absolute user-owned non-group/world-writable
+XDG_RUNTIME_DIR, is mode 0600, and validates Linux peer credentials.
+
+# EXIT STATUS
+
+0 on normal shutdown or successful validation, 1 on runtime/configuration
+failure, and 2 on command-line misuse.
+
+# SEE ALSO
+
+*rawclip*(1), *rawclip.conf*(5)
