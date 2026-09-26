@@ -25,6 +25,38 @@ set_error(char *err, size_t size, const char *fmt, ...)
     va_end(ap);
 }
 
+
+const char *
+rawclip_sync_mode_name(enum rawclip_sync_mode mode)
+{
+    switch (mode) {
+    case RAWCLIP_SYNC_NONE: return "none";
+    case RAWCLIP_SYNC_PRIMARY_TO_CLIPBOARD: return "primary-to-clipboard";
+    case RAWCLIP_SYNC_CLIPBOARD_TO_PRIMARY: return "clipboard-to-primary";
+    case RAWCLIP_SYNC_BIDIRECTIONAL: return "bidirectional";
+    }
+    return "invalid";
+}
+
+static int
+parse_sync_mode(const char *value, enum rawclip_sync_mode *out,
+                char *err, size_t err_size)
+{
+    if (strcmp(value, "none") == 0) *out = RAWCLIP_SYNC_NONE;
+    else if (strcmp(value, "primary-to-clipboard") == 0)
+        *out = RAWCLIP_SYNC_PRIMARY_TO_CLIPBOARD;
+    else if (strcmp(value, "clipboard-to-primary") == 0)
+        *out = RAWCLIP_SYNC_CLIPBOARD_TO_PRIMARY;
+    else if (strcmp(value, "bidirectional") == 0)
+        *out = RAWCLIP_SYNC_BIDIRECTIONAL;
+    else {
+        set_error(err, err_size, "selection.synchronize has an unsupported value");
+        errno = EINVAL;
+        return -1;
+    }
+    return 0;
+}
+
 static char *
 dup_string(const char *s)
 {
@@ -40,6 +72,7 @@ rawclip_config_defaults(struct rawclip_config *cfg)
     cfg->deduplicate = true;
     cfg->monitor_clipboard = true;
     cfg->monitor_primary = false;
+    cfg->sync_mode = RAWCLIP_SYNC_NONE;
     cfg->honor_password_manager_hint = true;
     cfg->menu_command = dup_string("rawmenu");
     cfg->menu_prompt = dup_string("clipboard");
@@ -251,11 +284,11 @@ apply_config(config_t *c, struct rawclip_config *cfg, char *err, size_t err_size
     }
     {
         static const char *const history_keys[] = {"max_entries", "max_entry_bytes", "deduplicate"};
-        static const char *const selection_keys[] = {"clipboard", "primary"};
+        static const char *const selection_keys[] = {"clipboard", "primary", "synchronize"};
         static const char *const security_keys[] = {"honor_password_manager_hint"};
         static const char *const menu_keys[] = {"command", "prompt"};
         if (validate_group(history, "history", history_keys, 3U, err, err_size) != 0 ||
-            validate_group(selection, "selection", selection_keys, 2U, err, err_size) != 0 ||
+            validate_group(selection, "selection", selection_keys, 3U, err, err_size) != 0 ||
             validate_group(security, "security", security_keys, 1U, err, err_size) != 0 ||
             validate_group(menu, "menu", menu_keys, 2U, err, err_size) != 0) return -1;
         if (validate_path_type(c, "history.max_entries", CONFIG_TYPE_INT, CONFIG_TYPE_INT64, err, err_size) != 0 ||
@@ -263,6 +296,7 @@ apply_config(config_t *c, struct rawclip_config *cfg, char *err, size_t err_size
             validate_path_type(c, "history.deduplicate", CONFIG_TYPE_BOOL, CONFIG_TYPE_BOOL, err, err_size) != 0 ||
             validate_path_type(c, "selection.clipboard", CONFIG_TYPE_BOOL, CONFIG_TYPE_BOOL, err, err_size) != 0 ||
             validate_path_type(c, "selection.primary", CONFIG_TYPE_BOOL, CONFIG_TYPE_BOOL, err, err_size) != 0 ||
+            validate_path_type(c, "selection.synchronize", CONFIG_TYPE_STRING, CONFIG_TYPE_STRING, err, err_size) != 0 ||
             validate_path_type(c, "security.honor_password_manager_hint", CONFIG_TYPE_BOOL, CONFIG_TYPE_BOOL, err, err_size) != 0 ||
             validate_path_type(c, "menu.command", CONFIG_TYPE_STRING, CONFIG_TYPE_STRING, err, err_size) != 0 ||
             validate_path_type(c, "menu.prompt", CONFIG_TYPE_STRING, CONFIG_TYPE_STRING, err, err_size) != 0) return -1;
@@ -273,8 +307,22 @@ apply_config(config_t *c, struct rawclip_config *cfg, char *err, size_t err_size
     if (config_lookup_bool(c, "history.deduplicate", &b)) cfg->deduplicate = b != 0;
     if (config_lookup_bool(c, "selection.clipboard", &b)) cfg->monitor_clipboard = b != 0;
     if (config_lookup_bool(c, "selection.primary", &b)) cfg->monitor_primary = b != 0;
+    if (config_lookup_string(c, "selection.synchronize", &s) &&
+        parse_sync_mode(s, &cfg->sync_mode, err, err_size) != 0) return -1;
     if (!cfg->monitor_clipboard && !cfg->monitor_primary) {
         set_error(err, err_size, "at least one selection must be monitored");
+        errno = EINVAL;
+        return -1;
+    }
+    if ((cfg->sync_mode == RAWCLIP_SYNC_PRIMARY_TO_CLIPBOARD ||
+         cfg->sync_mode == RAWCLIP_SYNC_BIDIRECTIONAL) && !cfg->monitor_primary) {
+        set_error(err, err_size, "selection.synchronize requires PRIMARY monitoring");
+        errno = EINVAL;
+        return -1;
+    }
+    if ((cfg->sync_mode == RAWCLIP_SYNC_CLIPBOARD_TO_PRIMARY ||
+         cfg->sync_mode == RAWCLIP_SYNC_BIDIRECTIONAL) && !cfg->monitor_clipboard) {
+        set_error(err, err_size, "selection.synchronize requires CLIPBOARD monitoring");
         errno = EINVAL;
         return -1;
     }

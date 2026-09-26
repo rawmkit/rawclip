@@ -17,6 +17,8 @@ main(int argc, char **argv)
     assert(cfg.deduplicate);
     assert(cfg.monitor_clipboard);
     assert(!cfg.monitor_primary);
+    assert(cfg.sync_mode == RAWCLIP_SYNC_NONE);
+    assert(strcmp(rawclip_sync_mode_name(cfg.sync_mode), "none") == 0);
     assert(cfg.honor_password_manager_hint);
     assert(strcmp(cfg.menu_command, "rawmenu") == 0);
     rawclip_config_destroy(&cfg);

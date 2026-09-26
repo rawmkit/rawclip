@@ -4,6 +4,13 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+enum rawclip_sync_mode {
+    RAWCLIP_SYNC_NONE = 0,
+    RAWCLIP_SYNC_PRIMARY_TO_CLIPBOARD,
+    RAWCLIP_SYNC_CLIPBOARD_TO_PRIMARY,
+    RAWCLIP_SYNC_BIDIRECTIONAL,
+};
+
 struct rawclip_exclude_rule {
     char *instance;
     char *class_name;
@@ -17,6 +24,7 @@ struct rawclip_config {
     bool deduplicate;
     bool monitor_clipboard;
     bool monitor_primary;
+    enum rawclip_sync_mode sync_mode;
     bool honor_password_manager_hint;
     char *menu_command;
     char *menu_prompt;
@@ -29,5 +37,6 @@ void rawclip_config_destroy(struct rawclip_config *cfg);
 int rawclip_config_load(struct rawclip_config *cfg, const char *explicit_path,
                         char *err, size_t err_size);
 int rawclip_config_validate_file(const char *path, char *err, size_t err_size);
+const char *rawclip_sync_mode_name(enum rawclip_sync_mode mode);
 
 #endif
