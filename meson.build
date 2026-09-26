@@ -11,6 +11,10 @@ project(
   ],
 )
 
+if host_machine.system() != 'linux'
+  error('rawclip currently supports Linux/X11 only')
+endif
+
 cc = meson.get_compiler('c')
 x11_dep = dependency('x11')
 xfixes_dep = dependency('xfixes')
