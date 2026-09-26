@@ -176,4 +176,165 @@ cmp "$state/large.expected" "$state/large.paste.after-abort"
 "$rawclip" clear
 "$rawclip" reload
 
+# PRIMARY/CLIPBOARD synchronization is explicit policy. Restart with both
+# selections monitored and bidirectional synchronization enabled.
+kill "$daemon_pid"
+wait "$daemon_pid"
+daemon_pid=
+cat >"$state/rawclip-sync.conf" <<EOF2
+history = { max_entries = 8; max_entry_bytes = 524288; deduplicate = true; };
+selection = { clipboard = true; primary = true; synchronize = "bidirectional"; };
+security = { honor_password_manager_hint = true; };
+menu = { command = "$state/fake-menu"; prompt = "clipboard"; };
+exclude = ();
+EOF2
+"$rawclipd" -c "$state/rawclip-sync.conf" >"$state/sync-daemon.out" 2>"$state/sync-daemon.err" &
+daemon_pid=$!
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    "$rawclip" status >/dev/null 2>&1 && break || sleep 0.05
+done
+"$rawclip" status | grep -q 'clipboard=1 primary=1 synchronize=bidirectional'
+
+# PRIMARY admission mirrors ordinary text to CLIPBOARD exactly once.
+"$helper" offer 'from-primary' --primary >"$state/primary-owner.out" &
+owner_pid=$!
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    line=$("$rawclip" list)
+    printf '%s\n' "$line" | grep -q 'from-primary' && break || sleep 0.05
+done
+printf '%s\n' "$line" | grep -q 'from-primary'
+[ "$(printf '%s\n' "$line" | wc -l)" -eq 1 ]
+id=${line%%	*}
+[ "$("$helper" paste)" = 'from-primary' ]
+kill "$owner_pid"
+wait "$owner_pid"
+owner_pid=
+# Explicit history replay owns CLIPBOARD and follows synchronization policy.
+"$rawclip" select "$id"
+[ "$("$helper" paste-primary)" = 'from-primary' ]
+"$rawclip" clear
+
+# CLIPBOARD admission mirrors ordinary text to PRIMARY exactly once.
+"$helper" offer 'from-clipboard' >"$state/clipboard-owner.out" &
+owner_pid=$!
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    line=$("$rawclip" list)
+    printf '%s\n' "$line" | grep -q 'from-clipboard' && break || sleep 0.05
+done
+printf '%s\n' "$line" | grep -q 'from-clipboard'
+[ "$(printf '%s\n' "$line" | wc -l)" -eq 1 ]
+[ "$("$helper" paste-primary)" = 'from-clipboard' ]
+kill "$owner_pid"
+wait "$owner_pid"
+owner_pid=
+"$rawclip" clear
+
+# A secret PRIMARY offer is neither admitted nor mirrored to CLIPBOARD.
+"$helper" offer 'primary-secret' --secret --primary >"$state/primary-secret.out" &
+owner_pid=$!
+sleep 0.15
+[ -z "$("$rawclip" list)" ]
+if "$helper" paste >/dev/null 2>&1; then
+    echo 'sensitive PRIMARY was synchronized to CLIPBOARD' >&2
+    exit 1
+fi
+kill "$owner_pid"
+wait "$owner_pid"
+owner_pid=
+grep -q '^text_requests=0$' "$state/primary-secret.out"
+
+# A secret CLIPBOARD offer is neither admitted nor mirrored to PRIMARY.
+"$helper" offer 'clipboard-secret' --secret >"$state/clipboard-secret.out" &
+owner_pid=$!
+sleep 0.15
+[ -z "$("$rawclip" list)" ]
+if "$helper" paste-primary >/dev/null 2>&1; then
+    echo 'sensitive CLIPBOARD was synchronized to PRIMARY' >&2
+    exit 1
+fi
+kill "$owner_pid"
+wait "$owner_pid"
+owner_pid=
+grep -q '^text_requests=0$' "$state/clipboard-secret.out"
+
+# Tightening policy releases synchronization-owned selections on reload.
+"$helper" offer 'reload-source' >"$state/reload-owner.out" &
+owner_pid=$!
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    "$helper" paste-primary 2>/dev/null | grep -q '^reload-source$' && break || sleep 0.05
+done
+[ "$("$helper" paste-primary)" = 'reload-source' ]
+line=$("$rawclip" list)
+id=${line%%	*}
+kill "$owner_pid"
+wait "$owner_pid"
+owner_pid=
+# Make CLIPBOARD explicit replay authority; PRIMARY remains synchronization-owned.
+"$rawclip" select "$id"
+cat >"$state/rawclip-sync.conf" <<EOF2
+history = { max_entries = 8; max_entry_bytes = 524288; deduplicate = true; };
+selection = { clipboard = true; primary = true; synchronize = "none"; };
+security = { honor_password_manager_hint = true; };
+menu = { command = "$state/fake-menu"; prompt = "clipboard"; };
+exclude = ();
+EOF2
+"$rawclip" reload
+"$rawclip" status | grep -q 'clipboard=1 primary=1 synchronize=none'
+if "$helper" paste-primary >/dev/null 2>&1; then
+    echo 'reload retained synchronization-owned PRIMARY' >&2
+    exit 1
+fi
+[ "$("$helper" paste)" = 'reload-source' ]
+
+# PRIMARY monitoring remains useful without synchronization.
+"$rawclip" clear
+"$helper" offer 'primary-history-only' --primary >"$state/primary-only.out" &
+owner_pid=$!
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    line=$("$rawclip" list)
+    printf '%s\n' "$line" | grep -q 'primary-history-only' && break || sleep 0.05
+done
+printf '%s\n' "$line" | grep -q 'primary-history-only'
+if "$helper" paste >/dev/null 2>&1; then
+    echo 'PRIMARY monitoring synchronized while policy was none' >&2
+    exit 1
+fi
+kill "$owner_pid"
+wait "$owner_pid"
+owner_pid=
+"$rawclip" clear
+
+# Directional policy does not imply the reverse direction.
+cat >"$state/rawclip-sync.conf" <<EOF2
+history = { max_entries = 8; max_entry_bytes = 524288; deduplicate = true; };
+selection = { clipboard = true; primary = true; synchronize = "primary-to-clipboard"; };
+security = { honor_password_manager_hint = true; };
+menu = { command = "$state/fake-menu"; prompt = "clipboard"; };
+exclude = ();
+EOF2
+"$rawclip" reload
+"$helper" offer 'one-way-clipboard' >"$state/one-way-clipboard.out" &
+owner_pid=$!
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    line=$("$rawclip" list)
+    printf '%s\n' "$line" | grep -q 'one-way-clipboard' && break || sleep 0.05
+done
+if "$helper" paste-primary >/dev/null 2>&1; then
+    echo 'primary-to-clipboard policy mirrored CLIPBOARD in reverse' >&2
+    exit 1
+fi
+kill "$owner_pid"
+wait "$owner_pid"
+owner_pid=
+"$rawclip" clear
+"$helper" offer 'one-way-primary' --primary >"$state/one-way-primary.out" &
+owner_pid=$!
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    "$helper" paste 2>/dev/null | grep -q '^one-way-primary$' && break || sleep 0.05
+done
+[ "$("$helper" paste)" = 'one-way-primary' ]
+kill "$owner_pid"
+wait "$owner_pid"
+owner_pid=
+
 echo 'rawclip integration tests: ok'

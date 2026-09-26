@@ -33,12 +33,12 @@ server_direct_bytes(Display *dpy)
 
 static int
 offer(const char *text, size_t text_len, const char *hint_value,
-      bool broken_hint, const char *class_name)
+      bool broken_hint, const char *class_name, bool primary_selection)
 {
     Display *dpy = XOpenDisplay(NULL);
     Window win;
     Window send_requestor = None;
-    Atom clipboard, targets, utf8, sensitive, incr;
+    Atom clipboard, selection, targets, utf8, sensitive, incr;
     Atom send_property = None;
     size_t send_offset = 0U;
     size_t direct_bytes;
@@ -56,14 +56,15 @@ offer(const char *text, size_t text_len, const char *hint_value,
         XSetClassHint(dpy, win, &hint);
     }
     clipboard = XInternAtom(dpy, "CLIPBOARD", False);
+    selection = primary_selection ? XA_PRIMARY : clipboard;
     targets = XInternAtom(dpy, "TARGETS", False);
     utf8 = XInternAtom(dpy, "UTF8_STRING", False);
     sensitive = XInternAtom(dpy, "x-kde-passwordManagerHint", False);
     incr = XInternAtom(dpy, "INCR", False);
     direct_bytes = server_direct_bytes(dpy);
-    XSetSelectionOwner(dpy, clipboard, win, CurrentTime);
+    XSetSelectionOwner(dpy, selection, win, CurrentTime);
     XFlush(dpy);
-    if (XGetSelectionOwner(dpy, clipboard) != win) return 3;
+    if (XGetSelectionOwner(dpy, selection) != win) return 3;
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = on_signal;
     sigemptyset(&sa.sa_mask);
@@ -172,11 +173,11 @@ offer(const char *text, size_t text_len, const char *hint_value,
 }
 
 static int
-paste(bool abort_incr, bool string_target)
+paste(bool abort_incr, bool string_target, bool primary_selection)
 {
     Display *dpy = XOpenDisplay(NULL);
     Window win;
-    Atom clipboard, utf8, target, property, incr;
+    Atom clipboard, selection, utf8, target, property, incr;
     XEvent ev;
     bool incremental = false;
 
@@ -184,11 +185,12 @@ paste(bool abort_incr, bool string_target)
     win = XCreateSimpleWindow(dpy, DefaultRootWindow(dpy), 0, 0, 1, 1, 0, 0, 0);
     XSelectInput(dpy, win, PropertyChangeMask);
     clipboard = XInternAtom(dpy, "CLIPBOARD", False);
+    selection = primary_selection ? XA_PRIMARY : clipboard;
     utf8 = XInternAtom(dpy, "UTF8_STRING", False);
     target = string_target ? XA_STRING : utf8;
     incr = XInternAtom(dpy, "INCR", False);
     property = XInternAtom(dpy, "_RAWCLIP_TEST_PASTE", False);
-    XConvertSelection(dpy, clipboard, target, property, win, CurrentTime);
+    XConvertSelection(dpy, selection, target, property, win, CurrentTime);
     XFlush(dpy);
     for (;;) {
         XNextEvent(dpy, &ev);
@@ -383,9 +385,10 @@ main(int argc, char **argv)
         XCloseDisplay(dpy);
         return 0;
     }
-    if (argc == 2 && strcmp(argv[1], "paste") == 0) return paste(false, false);
-    if (argc == 2 && strcmp(argv[1], "paste-string") == 0) return paste(false, true);
-    if (argc == 2 && strcmp(argv[1], "paste-abort") == 0) return paste(true, false);
+    if (argc == 2 && strcmp(argv[1], "paste") == 0) return paste(false, false, false);
+    if (argc == 2 && strcmp(argv[1], "paste-primary") == 0) return paste(false, false, true);
+    if (argc == 2 && strcmp(argv[1], "paste-string") == 0) return paste(false, true, false);
+    if (argc == 2 && strcmp(argv[1], "paste-abort") == 0) return paste(true, false, false);
     if (argc == 2 && strcmp(argv[1], "probe-owner") == 0) return probe_owner();
     if (argc == 3 && strcmp(argv[1], "offer-size") == 0) {
         size_t len;
@@ -396,13 +399,14 @@ main(int argc, char **argv)
         if (text == NULL) return 2;
         memset(text, 'L', len);
         text[len] = '\0';
-        rc = offer(text, len, NULL, false, NULL);
+        rc = offer(text, len, NULL, false, NULL, false);
         free(text);
         return rc;
     }
     if (argc >= 3 && strcmp(argv[1], "offer") == 0) {
         const char *hint_value = NULL;
         bool broken_hint = false;
+        bool primary_selection = false;
         const char *class_name = NULL;
         int i;
         for (i = 3; i < argc; i++) {
@@ -410,10 +414,12 @@ main(int argc, char **argv)
             else if (strcmp(argv[i], "--hint") == 0 && i + 1 < argc) hint_value = argv[++i];
             else if (strcmp(argv[i], "--broken-hint") == 0) broken_hint = true;
             else if (strcmp(argv[i], "--class") == 0 && i + 1 < argc) class_name = argv[++i];
+            else if (strcmp(argv[i], "--primary") == 0) primary_selection = true;
             else return 2;
         }
         if (broken_hint && hint_value != NULL) return 2;
-        return offer(argv[2], strlen(argv[2]), hint_value, broken_hint, class_name);
+        return offer(argv[2], strlen(argv[2]), hint_value, broken_hint, class_name,
+                     primary_selection);
     }
     return 2;
 }
