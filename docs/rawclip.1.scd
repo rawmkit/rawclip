@@ -17,9 +17,10 @@ monitor X11 selections itself and does not own persistent history.
 
 # COMMANDS
 
-*menu*
-	Present current history through the configured rawmenu selector and replay
-	the selected entry as CLIPBOARD. The configured executable is invoked with
+*menu* [*select*|*delete*]
+	Present current history through the configured rawmenu selector. The default
+	and explicit *select* action replay the selected entry as CLIPBOARD; *delete*
+	removes the selected history entry without changing clipboard ownership. The configured executable is invoked with
 	*-M select -p* _prompt_. Empty history is a successful no-op and is reported
 	on standard error.
 
@@ -44,8 +45,12 @@ monitor X11 selections itself and does not own persistent history.
 	Control capture without destroying existing history.
 
 *status*
-	Print daemon pause/history status plus active CLIPBOARD/PRIMARY monitor flags
-	and synchronization mode.
+	Print daemon/history policy plus live receive, outgoing transfer, and current
+	rawclip-owned selection state.
+
+*health*
+	Probe the authenticated daemon control path. Print *ok* and exit zero when the
+	daemon services the request from its main event loop.
 
 *reload*
 	Ask rawclipd to atomically reload its configuration.
@@ -62,8 +67,8 @@ monitor X11 selections itself and does not own persistent history.
 
 # EXIT STATUS
 
-0 on success or menu cancellation, 1 on runtime failure, and 2 on command-line
-misuse.
+0 on success or menu cancellation, 1 on runtime or menu-frontend failure, and
+2 on command-line misuse.
 
 # FILES
 

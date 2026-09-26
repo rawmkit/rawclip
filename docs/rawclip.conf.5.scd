@@ -58,7 +58,12 @@ pasteable without a copy action and is therefore opt-in.
 	Default: "rawmenu".
 
 *menu.prompt* = string
-	Prompt passed to the menu frontend. Default: "clipboard".
+	Prompt passed to the menu frontend. Delete mode appends " delete".
+	Default: "clipboard".
+
+*menu.preview_chars* = integer
+	Maximum UTF-8 characters rendered from each history entry in the menu. Text
+	bytes stored in history are unchanged. Range: 1 through 4096. Default: 200.
 
 # EXCLUDE
 

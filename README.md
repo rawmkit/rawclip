@@ -80,7 +80,8 @@ rawclipd &
 ```
 
 The daemon creates one mode-0600 control socket per X display under
-`$XDG_RUNTIME_DIR`. The runtime directory must be absolute, owned by the
+`$XDG_RUNTIME_DIR`. A stable per-display lock file serializes daemon startup and
+is intentionally retained in the runtime directory across daemon exits. The runtime directory must be absolute, owned by the
 current user, and not group/world writable. Control clients are authenticated
 with Linux peer credentials.
 
@@ -88,6 +89,7 @@ with Linux peer credentials.
 
 ```text
 rawclip menu
+rawclip menu delete
 rawclip list
 rawclip show ID
 rawclip select ID
@@ -97,6 +99,7 @@ rawclip pause
 rawclip resume
 rawclip toggle
 rawclip status
+rawclip health
 rawclip reload
 ```
 
@@ -111,7 +114,9 @@ sanitized previews to:
 rawmenu -M select -p clipboard
 ```
 
-and replays the selected ID. No shell evaluates the menu command.
+and replays the selected ID. `rawclip menu delete` uses the same selector to
+remove one chosen history entry without changing clipboard ownership. No shell
+evaluates the menu command.
 
 Cancellation is not an error and leaves the current clipboard untouched. An empty
 history is also a successful no-op; `rawclip menu` reports `history is empty` on
@@ -170,6 +175,7 @@ security = {
 menu = {
     command = "rawmenu";
     prompt = "clipboard";
+    preview_chars = 200;
 };
 
 exclude = ();
@@ -240,8 +246,10 @@ PRIMARY to CLIPBOARD is a stronger policy: highlighted text can become explicitl
 pasteable without a copy action. For that reason every synchronization direction
 is opt-in and `none` remains the default.
 
-`rawclip status` reports the live monitor flags and synchronization mode so a
-policy reload can be verified without inferring state from clipboard behavior.
+`rawclip status` reports live monitor flags, synchronization mode, current
+rawclip-owned selections, pending receive state, and outgoing INCR transfer
+count. `rawclip health` is the smaller supervision probe: success means the
+daemon accepted and serviced an authenticated request in its event loop.
 
 ## Persistence
 

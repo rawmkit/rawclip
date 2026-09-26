@@ -113,7 +113,9 @@ CLIPBOARD replay.
 ## Local control socket
 
 The socket lives under `$XDG_RUNTIME_DIR`, which must be absolute, owned by the
-current user, and not group/world writable. The socket mode is 0600.
+current user, and not group/world writable. The socket mode is 0600. A stable mode-0600 lock file in the same runtime
+directory serializes daemon startup; it is reused rather than unlinked on exit
+so lock authority cannot move to a new inode during a successor race.
 
 On Linux, rawclipd verifies `SO_PEERCRED` and requires the connecting process UID
 to match the daemon UID. IPC frames contain a fixed magic, version, type and
@@ -142,8 +144,10 @@ COMMAND -M select -p PROMPT
 ```
 
 The menu receives sanitized previews rather than raw multiline text, prefixed
-with stable numeric IDs. The selected ID is revalidated by rawclipd before
-clipboard ownership changes.
+with stable numeric IDs. Preview length is bounded by `menu.preview_chars` and
+truncation is UTF-8 character-safe. The selected ID is revalidated by rawclipd before clipboard ownership changes
+or history deletion. Menu exit status 1 is cancellation; other frontend failures
+and malformed successful output are reported as errors.
 
 rawclip does not register global shortcuts. Keyboard authority belongs to the
 window manager.
