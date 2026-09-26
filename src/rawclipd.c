@@ -34,6 +34,7 @@ struct daemon_state {
     char lock_path[4096];
     int lock_fd;
     int listen_fd;
+    bool socket_bound;
     bool paused;
 };
 
@@ -108,10 +109,12 @@ setup_socket(struct daemon_state *st)
         errno = saved;
         return -1;
     }
+    st->socket_bound = true;
     if (chmod(st->socket_path, S_IRUSR | S_IWUSR) != 0 || listen(fd, 16) != 0) {
         int saved = errno;
         close(fd);
         unlink(st->socket_path);
+        st->socket_bound = false;
         errno = saved;
         return -1;
     }
@@ -370,9 +373,8 @@ main(int argc, char **argv)
     rc = 0;
 out:
     if (st.listen_fd >= 0) close(st.listen_fd);
-    if (st.socket_path[0] != '\0') unlink(st.socket_path);
+    if (st.socket_bound && st.socket_path[0] != '\0') unlink(st.socket_path);
     if (st.lock_fd >= 0) close(st.lock_fd);
-    if (st.lock_path[0] != '\0') unlink(st.lock_path);
     rawclip_x11_destroy(st.x11);
     rawclip_history_destroy(&st.history);
     rawclip_config_destroy(&st.cfg);
