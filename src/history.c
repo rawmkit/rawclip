@@ -186,3 +186,15 @@ rawclip_history_clear(struct rawclip_history *h)
     }
     h->len = 0U;
 }
+
+void
+rawclip_history_reconfigure(struct rawclip_history *h, size_t max_entries,
+                            size_t max_entry_bytes, bool deduplicate)
+{
+    h->max_entries = max_entries;
+    h->max_entry_bytes = max_entry_bytes;
+    h->deduplicate = deduplicate;
+    while (h->len > h->max_entries) {
+        evict_oldest(h);
+    }
+}

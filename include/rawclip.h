@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 #define RAWCLIP_DEFAULT_MAX_ENTRIES 256U
-#define RAWCLIP_DEFAULT_MAX_ENTRY_BYTES (1024U * 1024U)
+#define RAWCLIP_DEFAULT_MAX_ENTRY_BYTES (128U * 1024U)
 #define RAWCLIP_IPC_MAX_FRAME (2U * 1024U * 1024U)
 
 struct rawclip_entry {
@@ -35,5 +35,7 @@ const struct rawclip_entry *rawclip_history_get(const struct rawclip_history *h,
                                                 uint64_t id);
 int rawclip_history_delete(struct rawclip_history *h, uint64_t id);
 void rawclip_history_clear(struct rawclip_history *h);
+void rawclip_history_reconfigure(struct rawclip_history *h, size_t max_entries,
+                                 size_t max_entry_bytes, bool deduplicate);
 
 #endif

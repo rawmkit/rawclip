@@ -13,7 +13,7 @@ main(int argc, char **argv)
     memset(&cfg, 0, sizeof(cfg));
     assert(rawclip_config_load(&cfg, argv[1], err, sizeof(err)) == 0);
     assert(cfg.max_entries == 256U);
-    assert(cfg.max_entry_bytes == 1048576U);
+    assert(cfg.max_entry_bytes == 131072U);
     assert(cfg.deduplicate);
     assert(cfg.monitor_clipboard);
     assert(!cfg.monitor_primary);
