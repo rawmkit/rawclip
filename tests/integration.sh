@@ -7,6 +7,8 @@ rawclip_dir=$(CDPATH= cd -- "$(dirname -- "$2")" && pwd)
 rawclip="$rawclip_dir/$(basename -- "$2")"
 helper_dir=$(CDPATH= cd -- "$(dirname -- "$3")" && pwd)
 helper="$helper_dir/$(basename -- "$3")"
+ipc_probe_dir=$(CDPATH= cd -- "$(dirname -- "$4")" && pwd)
+ipc_probe="$ipc_probe_dir/$(basename -- "$4")"
 
 state=$(mktemp -d "${TMPDIR:-/tmp}/rawclip-test.XXXXXX")
 cleanup()
@@ -86,6 +88,11 @@ if "$rawclipd" -c "$state/rawclip.conf" >"$state/second-daemon.out" 2>"$state/se
     echo 'second rawclipd instance unexpectedly started' >&2
     exit 1
 fi
+[ "$("$rawclip" health)" = 'ok' ]
+"$ipc_probe" partial-frame >"$state/partial.out" 2>"$state/partial.err" &
+partial_pid=$!
+sleep 0.1
+wait "$partial_pid"
 [ "$("$rawclip" health)" = 'ok' ]
 "$rawclip" -c "$state/rawclip.conf" menu >"$state/empty-menu.out" 2>"$state/empty-menu.err"
 [ ! -s "$state/empty-menu.out" ]
@@ -191,6 +198,9 @@ sleep 0.15
 line=$("$rawclip" list)
 printf '%s\n' "$line" | grep -q 'alpha-value'
 id=${line%%	*}
+"$ipc_probe" abort-list
+sleep 0.05
+[ "$("$rawclip" health)" = 'ok' ]
 kill "$owner_pid"
 wait "$owner_pid"
 owner_pid=

@@ -127,12 +127,18 @@ x11_helper = executable(
   dependencies: [x11_dep],
 )
 
+ipc_probe = executable(
+  'ipc-probe',
+  ['tests/ipc-probe.c', 'src/ipc.c', 'src/util.c'],
+  include_directories: inc,
+)
+
 xvfb = find_program('Xvfb', required: false)
 if xvfb.found()
   test(
     'integration',
     find_program('tests/integration.sh'),
-    args: [rawclipd, rawclip, x11_helper],
+    args: [rawclipd, rawclip, x11_helper, ipc_probe],
     timeout: 30,
   )
 endif

@@ -289,6 +289,7 @@ main(int argc, char **argv)
     int opt;
     int rc = 1;
 
+    (void)signal(SIGPIPE, SIG_IGN);
     memset(&st, 0, sizeof(st));
     st.lock_fd = -1;
     st.listen_fd = -1;
