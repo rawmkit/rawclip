@@ -18,6 +18,20 @@
 #include <string.h>
 #include <unistd.h>
 
+#define RAWCLIP_MAX_SEND_TRANSFERS 16U
+#define RAWCLIP_SEND_TIMEOUT_MS 10000ULL
+
+struct send_transfer {
+    Window requestor;
+    Atom property;
+    Atom target;
+    unsigned char *data;
+    size_t len;
+    size_t offset;
+    uint64_t activity_ms;
+    struct send_transfer *next;
+};
+
 struct owner_meta {
     char *instance;
     char *class_name;
@@ -61,8 +75,9 @@ struct rawclip_x11 {
     unsigned char *buf;
     size_t buf_len;
     size_t buf_cap;
-    size_t max_direct_bytes;
     size_t server_direct_bytes;
+    struct send_transfer *send_head;
+    size_t send_len;
     char *owned_text;
     size_t owned_len;
     Time owned_time;
@@ -233,14 +248,168 @@ reset_receive(struct rawclip_x11 *x)
     XDeleteProperty(x->dpy, x->win, x->property);
 }
 
+static void
+send_transfer_destroy(struct send_transfer *t)
+{
+    if (t == NULL) return;
+    if (t->data != NULL) {
+        memset(t->data, 0, t->len);
+        free(t->data);
+    }
+    free(t);
+}
+
+static bool
+requestor_has_transfer(const struct rawclip_x11 *x, Window requestor)
+{
+    const struct send_transfer *t;
+    for (t = x->send_head; t != NULL; t = t->next) {
+        if (t->requestor == requestor) return true;
+    }
+    return false;
+}
+
+static void
+remove_send_link(struct rawclip_x11 *x, struct send_transfer **link)
+{
+    struct send_transfer *t = *link;
+    Window requestor;
+    if (t == NULL) return;
+    requestor = t->requestor;
+    *link = t->next;
+    if (x->send_len > 0U) x->send_len--;
+    send_transfer_destroy(t);
+    if (requestor != x->win && !requestor_has_transfer(x, requestor)) {
+        XSelectInput(x->dpy, requestor, NoEventMask);
+    }
+}
+
+static void
+cancel_send_for_window(struct rawclip_x11 *x, Window requestor)
+{
+    struct send_transfer **link = &x->send_head;
+    while (*link != NULL) {
+        if ((*link)->requestor == requestor) remove_send_link(x, link);
+        else link = &(*link)->next;
+    }
+}
+
+static void
+cancel_send_all(struct rawclip_x11 *x)
+{
+    while (x->send_head != NULL) remove_send_link(x, &x->send_head);
+}
+
+static void
+prune_send_transfers(struct rawclip_x11 *x)
+{
+    struct send_transfer **link = &x->send_head;
+    uint64_t now = rawclip_now_ms();
+    while (*link != NULL) {
+        struct send_transfer *t = *link;
+        XWindowAttributes attr;
+        bool expired = now >= t->activity_ms && now - t->activity_ms > RAWCLIP_SEND_TIMEOUT_MS;
+        bool gone = XGetWindowAttributes(x->dpy, t->requestor, &attr) == 0;
+        if (expired || gone) remove_send_link(x, link);
+        else link = &t->next;
+    }
+}
+
+static bool
+start_send_transfer(struct rawclip_x11 *x, Window requestor, Atom property,
+                    Atom target, const unsigned char *data, size_t len)
+{
+    struct send_transfer **link;
+    struct send_transfer *t;
+    XWindowAttributes attr;
+    unsigned long total;
+
+    if (requestor == None || requestor == x->win || property == None || data == NULL || len == 0U)
+        return false;
+
+    prune_send_transfers(x);
+    link = &x->send_head;
+    while (*link != NULL) {
+        if ((*link)->requestor == requestor && (*link)->property == property) {
+            remove_send_link(x, link);
+            break;
+        }
+        link = &(*link)->next;
+    }
+    if (x->send_len >= RAWCLIP_MAX_SEND_TRANSFERS ||
+        XGetWindowAttributes(x->dpy, requestor, &attr) == 0) return false;
+
+    t = calloc(1, sizeof(*t));
+    if (t == NULL) return false;
+    t->data = malloc(len);
+    if (t->data == NULL) {
+        free(t);
+        return false;
+    }
+    memcpy(t->data, data, len);
+    t->requestor = requestor;
+    t->property = property;
+    t->target = target;
+    t->len = len;
+    t->activity_ms = rawclip_now_ms();
+    t->next = x->send_head;
+    x->send_head = t;
+    x->send_len++;
+
+    XSelectInput(x->dpy, requestor, PropertyChangeMask | StructureNotifyMask);
+    total = (unsigned long)len;
+    XChangeProperty(x->dpy, requestor, property, x->incr, 32, PropModeReplace,
+                    (unsigned char *)&total, 1);
+    return true;
+}
+
+static bool
+serve_selection_data(struct rawclip_x11 *x, Window requestor, Atom property,
+                     Atom target, const unsigned char *data, size_t len)
+{
+    if (len <= x->server_direct_bytes) {
+        XChangeProperty(x->dpy, requestor, property, target, 8, PropModeReplace,
+                        data, (int)len);
+        return true;
+    }
+    return start_send_transfer(x, requestor, property, target, data, len);
+}
+
+static int
+outgoing_property_delete(struct rawclip_x11 *x, const XPropertyEvent *ev)
+{
+    struct send_transfer **link = &x->send_head;
+    while (*link != NULL) {
+        struct send_transfer *t = *link;
+        if (t->requestor == ev->window && t->property == ev->atom) {
+            if (t->offset < t->len) {
+                size_t left = t->len - t->offset;
+                size_t chunk = left < x->server_direct_bytes ? left : x->server_direct_bytes;
+                XChangeProperty(x->dpy, t->requestor, t->property, t->target, 8,
+                                PropModeReplace, t->data + t->offset, (int)chunk);
+                t->offset += chunk;
+                t->activity_ms = rawclip_now_ms();
+                XFlush(x->dpy);
+            } else {
+                XChangeProperty(x->dpy, t->requestor, t->property, t->target, 8,
+                                PropModeReplace, (const unsigned char *)"", 0);
+                XFlush(x->dpy);
+                remove_send_link(x, link);
+            }
+            return 1;
+        }
+        link = &t->next;
+    }
+    return 0;
+}
+
 static int
 append_receive(struct rawclip_x11 *x, const unsigned char *data, size_t len)
 {
     unsigned char *p;
     size_t cap;
     if (len == 0U) return 0;
-    if (x->buf_len > x->cfg->max_entry_bytes || len > x->cfg->max_entry_bytes - x->buf_len ||
-        x->buf_len + len > x->max_direct_bytes) {
+    if (x->buf_len > x->cfg->max_entry_bytes || len > x->cfg->max_entry_bytes - x->buf_len) {
         errno = EMSGSIZE;
         return -1;
     }
@@ -381,7 +550,7 @@ selection_notify(struct rawclip_x11 *x, const XSelectionEvent *ev)
                 char *utf8 = NULL;
                 size_t utf8_len = 0U;
                 if (rawclip_latin1_to_utf8(data, (size_t)nitems, &utf8, &utf8_len) == 0 &&
-                    utf8_len <= x->cfg->max_entry_bytes && utf8_len <= x->max_direct_bytes &&
+                    utf8_len <= x->cfg->max_entry_bytes &&
                     memchr(utf8, '\0', utf8_len) == NULL &&
                     append_receive(x, (const unsigned char *)utf8, utf8_len) == 0) {
                     rc = finish_text(x);
@@ -390,7 +559,7 @@ selection_notify(struct rawclip_x11 *x, const XSelectionEvent *ev)
                 }
                 free(utf8);
             } else if (actual == x->utf8 && rawclip_utf8_valid(data, (size_t)nitems) &&
-                       (size_t)nitems <= x->cfg->max_entry_bytes && (size_t)nitems <= x->max_direct_bytes &&
+                       (size_t)nitems <= x->cfg->max_entry_bytes &&
                        append_receive(x, data, (size_t)nitems) == 0) {
                 rc = finish_text(x);
             } else {
@@ -412,6 +581,7 @@ property_notify(struct rawclip_x11 *x, const XPropertyEvent *ev)
     unsigned long nitems = 0U, after = 0U;
     unsigned char *data = NULL;
     int rc = 0;
+    if (ev->state == PropertyDelete && outgoing_property_delete(x, ev) != 0) return 0;
     if (x->stage != RECEIVE_INCR || ev->window != x->win ||
         ev->atom != x->property || ev->state != PropertyNewValue) return 0;
     if (x->pending_owner == None ||
@@ -489,18 +659,16 @@ selection_request(struct rawclip_x11 *x, const XSelectionRequestEvent *req)
             XChangeProperty(x->dpy, req->requestor, property, XA_INTEGER, 32,
                             PropModeReplace, (unsigned char *)&t, 1);
             ok = true;
-        } else if (req->target == x->utf8 && x->owned_len <= x->max_direct_bytes) {
-            XChangeProperty(x->dpy, req->requestor, property, x->utf8, 8,
-                            PropModeReplace, (unsigned char *)x->owned_text, (int)x->owned_len);
-            ok = true;
-        } else if (req->target == x->string && x->owned_len <= x->max_direct_bytes) {
+        } else if (req->target == x->utf8) {
+            ok = serve_selection_data(x, req->requestor, property, x->utf8,
+                                      (const unsigned char *)x->owned_text, x->owned_len);
+        } else if (req->target == x->string) {
             unsigned char *latin1 = NULL;
             size_t latin1_len = 0U;
             if (rawclip_utf8_to_latin1(x->owned_text, x->owned_len, &latin1, &latin1_len) == 0) {
-                XChangeProperty(x->dpy, req->requestor, property, x->string, 8,
-                                PropModeReplace, latin1, (int)latin1_len);
+                ok = serve_selection_data(x, req->requestor, property, x->string,
+                                          latin1, latin1_len);
                 free(latin1);
-                ok = true;
             }
         }
     }
@@ -573,7 +741,6 @@ rawclip_x11_create(const struct rawclip_config *cfg, rawclip_capture_fn capture,
     x->userdata = userdata;
     max_request = XMaxRequestSize(x->dpy);
     x->server_direct_bytes = max_request > 1024 ? ((size_t)max_request - 256U) * 4U : 65536U;
-    x->max_direct_bytes = x->server_direct_bytes < cfg->max_entry_bytes ? x->server_direct_bytes : cfg->max_entry_bytes;
     XFixesSelectSelectionInput(x->dpy, x->win, x->clipboard,
                                XFixesSetSelectionOwnerNotifyMask |
                                XFixesSelectionWindowDestroyNotifyMask |
@@ -591,6 +758,7 @@ rawclip_x11_destroy(struct rawclip_x11 *x)
 {
     if (x == NULL) return;
     reset_receive(x);
+    cancel_send_all(x);
     free(x->owned_text);
     if (x->dpy != NULL) {
         if (x->win != None) XDestroyWindow(x->dpy, x->win);
@@ -619,7 +787,10 @@ rawclip_x11_dispatch(struct rawclip_x11 *x)
             if (property_notify(x, &ev.xproperty) != 0) return -1;
         } else if (ev.type == SelectionRequest) {
             selection_request(x, &ev.xselectionrequest);
+        } else if (ev.type == DestroyNotify) {
+            cancel_send_for_window(x, ev.xdestroywindow.window);
         } else if (ev.type == SelectionClear && ev.xselectionclear.selection == x->clipboard) {
+            cancel_send_all(x);
             free(x->owned_text);
             x->owned_text = NULL;
             x->owned_len = 0U;
@@ -639,7 +810,6 @@ void
 rawclip_x11_set_config(struct rawclip_x11 *x, const struct rawclip_config *cfg)
 {
     x->cfg = cfg;
-    x->max_direct_bytes = x->server_direct_bytes < cfg->max_entry_bytes ? x->server_direct_bytes : cfg->max_entry_bytes;
 }
 
 int
@@ -647,7 +817,7 @@ rawclip_x11_own_clipboard(struct rawclip_x11 *x, const char *text, size_t len)
 {
     char *copy;
     Time t;
-    if (text == NULL || len == 0U || len > x->cfg->max_entry_bytes || len > x->max_direct_bytes ||
+    if (text == NULL || len == 0U || len > x->cfg->max_entry_bytes ||
         memchr(text, '\0', len) != NULL) {
         errno = EINVAL;
         return -1;
@@ -655,6 +825,7 @@ rawclip_x11_own_clipboard(struct rawclip_x11 *x, const char *text, size_t len)
     copy = rawclip_xstrndup(text, len);
     if (copy == NULL) return -1;
     reset_receive(x);
+    cancel_send_all(x);
     t = server_time(x);
     XSetSelectionOwner(x->dpy, x->clipboard, x->win, t);
     XSync(x->dpy, False);
@@ -673,6 +844,7 @@ rawclip_x11_own_clipboard(struct rawclip_x11 *x, const char *text, size_t len)
 void
 rawclip_x11_clear_owned(struct rawclip_x11 *x)
 {
+    cancel_send_all(x);
     if (XGetSelectionOwner(x->dpy, x->clipboard) == x->win) {
         XSetSelectionOwner(x->dpy, x->clipboard, None, CurrentTime);
         XFlush(x->dpy);
