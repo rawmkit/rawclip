@@ -31,7 +31,7 @@ usage(FILE *f)
     fprintf(f,
             "usage: rawclip [-c path] COMMAND [ARG]\n"
             "       rawclip -v\n"
-            "commands: menu [select|delete] list show select delete clear pause resume toggle status reload\n");
+            "commands: menu [select|delete] list show select delete clear pause resume toggle status health reload\n");
 }
 
 static int
@@ -385,6 +385,7 @@ main(int argc, char **argv)
     else CMD0("resume", RAWCLIP_IPC_RESUME)
     else CMD0("toggle", RAWCLIP_IPC_TOGGLE)
     else CMD0("status", RAWCLIP_IPC_STATUS)
+    else CMD0("health", RAWCLIP_IPC_HEALTH)
     else CMD0("reload", RAWCLIP_IPC_RELOAD)
     else { usage(stderr); return 2; }
 #undef CMD0

@@ -12,6 +12,13 @@ typedef int (*rawclip_capture_fn)(void *userdata, const char *text, size_t len,
 
 struct rawclip_x11;
 
+struct rawclip_x11_status {
+    bool receive_pending;
+    size_t outgoing_transfers;
+    bool own_clipboard;
+    bool own_primary;
+};
+
 struct rawclip_x11 *rawclip_x11_create(const struct rawclip_config *cfg,
                                        rawclip_capture_fn capture,
                                        void *userdata, char *err,
@@ -25,5 +32,7 @@ void rawclip_x11_set_config(struct rawclip_x11 *x,
 int rawclip_x11_own_clipboard(struct rawclip_x11 *x, const char *text,
                               size_t len);
 void rawclip_x11_clear_owned(struct rawclip_x11 *x);
+void rawclip_x11_get_status(struct rawclip_x11 *x,
+                            struct rawclip_x11_status *status);
 
 #endif

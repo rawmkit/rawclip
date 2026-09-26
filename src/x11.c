@@ -987,3 +987,15 @@ rawclip_x11_clear_owned(struct rawclip_x11 *x)
     }
     XFlush(x->dpy);
 }
+
+void
+rawclip_x11_get_status(struct rawclip_x11 *x, struct rawclip_x11_status *status)
+{
+    if (status == NULL) return;
+    memset(status, 0, sizeof(*status));
+    if (x == NULL) return;
+    status->receive_pending = x->stage != RECEIVE_IDLE;
+    status->outgoing_transfers = x->send_len;
+    status->own_clipboard = XGetSelectionOwner(x->dpy, x->clipboard) == x->win;
+    status->own_primary = XGetSelectionOwner(x->dpy, x->primary) == x->win;
+}
