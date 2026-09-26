@@ -108,7 +108,7 @@ rawclip reload
 sanitized previews to:
 
 ```sh
-rawmenu select -p clipboard
+rawmenu -M select -p clipboard
 ```
 
 and replays the selected ID. No shell evaluates the menu command.

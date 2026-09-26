@@ -45,7 +45,9 @@ At least one monitored selection must remain enabled.
 # MENU
 
 *menu.command* = string
-	Executable invoked directly for *rawclip menu*. Default: "rawmenu".
+	Executable invoked directly for *rawclip menu*. It must implement the rawmenu
+	selector command-line contract and is invoked with *-M select -p* _prompt_.
+	Default: "rawmenu".
 
 *menu.prompt* = string
 	Prompt passed to the menu frontend. Default: "clipboard".
