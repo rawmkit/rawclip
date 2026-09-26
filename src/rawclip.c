@@ -31,7 +31,7 @@ usage(FILE *f)
     fprintf(f,
             "usage: rawclip [-c path] COMMAND [ARG]\n"
             "       rawclip -v\n"
-            "commands: menu list show select delete clear pause resume toggle status reload\n");
+            "commands: menu [select|delete] list show select delete clear pause resume toggle status reload\n");
 }
 
 static int
@@ -85,23 +85,38 @@ print_reply(const struct rawclip_ipc_frame *reply, bool exact)
     return reply->type == RAWCLIP_IPC_OK || reply->type == RAWCLIP_IPC_DATA ? 0 : 1;
 }
 
-static void
-preview(FILE *f, const char *text, size_t len)
+static size_t
+utf8_sequence_len(unsigned char c)
 {
-    size_t i;
-    size_t limit = len < 200U ? len : 200U;
+    if (c < 0x80U) return 1U;
+    if ((c & 0xe0U) == 0xc0U) return 2U;
+    if ((c & 0xf0U) == 0xe0U) return 3U;
+    if ((c & 0xf8U) == 0xf0U) return 4U;
+    return 1U;
+}
+
+static void
+preview(FILE *f, const char *text, size_t len, size_t max_chars)
+{
+    size_t i = 0U, chars = 0U;
     bool space = false;
-    for (i = 0U; i < limit; i++) {
+
+    while (i < len && chars < max_chars) {
         unsigned char c = (unsigned char)text[i];
-        if (c == '\n' || c == '\r' || c == '\t' || c < 0x20U) {
+        size_t seq = utf8_sequence_len(c);
+        if (seq > len - i) seq = 1U;
+        if (c < 0x20U || c == 0x7fU) {
             if (!space) fputc(' ', f);
             space = true;
+            i++;
         } else {
-            fputc((int)c, f);
+            if (fwrite(text + i, 1U, seq, f) != seq) return;
             space = false;
+            i += seq;
         }
+        chars++;
     }
-    if (limit < len) fputs("…", f);
+    if (i < len) fputs("…", f);
 }
 
 static int
@@ -134,7 +149,7 @@ list_command(void)
         }
         (void)ts;
         printf("%llu\t", (unsigned long long)id);
-        preview(stdout, text, len);
+        preview(stdout, text, len, 200U);
         putchar('\n');
         rawclip_ipc_frame_destroy(&frame);
     }
@@ -209,8 +224,13 @@ free_entries(struct menu_entry *entries, size_t len)
     free(entries);
 }
 
+enum menu_action {
+    MENU_SELECT = 0,
+    MENU_DELETE,
+};
+
 static int
-menu_command(const struct rawclip_config *cfg)
+menu_command(const struct rawclip_config *cfg, enum menu_action action)
 {
     struct menu_entry *entries = NULL;
     size_t len = 0U, i;
@@ -224,6 +244,14 @@ menu_command(const struct rawclip_config *cfg)
     uint64_t id;
     char idbuf[32];
     struct rawclip_ipc_frame reply;
+    char action_prompt[256];
+    const char *prompt = cfg->menu_prompt;
+
+    if (action == MENU_DELETE) {
+        int pn = snprintf(action_prompt, sizeof(action_prompt), "%s delete", cfg->menu_prompt);
+        if (pn < 0 || (size_t)pn >= sizeof(action_prompt)) { errno = ENAMETOOLONG; return -1; }
+        prompt = action_prompt;
+    }
 
     if (collect_entries(&entries, &len) != 0) return -1;
     if (len == 0U) {
@@ -236,7 +264,7 @@ menu_command(const struct rawclip_config *cfg)
     if (pid < 0) goto fail;
     if (pid == 0) {
         char *const argv[] = {cfg->menu_command, (char *)"-M", (char *)"select",
-                              (char *)"-p", cfg->menu_prompt, NULL};
+                              (char *)"-p", (char *)prompt, NULL};
         dup2(inpipe[0], STDIN_FILENO);
         dup2(outpipe[1], STDOUT_FILENO);
         close(inpipe[0]); close(inpipe[1]); close(outpipe[0]); close(outpipe[1]);
@@ -250,7 +278,7 @@ menu_command(const struct rawclip_config *cfg)
     inpipe[1] = -1;
     for (i = 0U; i < len; i++) {
         fprintf(input, "%llu\t", (unsigned long long)entries[i].id);
-        preview(input, entries[i].text, entries[i].len);
+        preview(input, entries[i].text, entries[i].len, cfg->menu_preview_chars);
         fputc('\n', input);
     }
     if (fclose(input) != 0) { input = NULL; goto parent_fail; }
@@ -258,16 +286,25 @@ menu_command(const struct rawclip_config *cfg)
     n = read(outpipe[0], selected, sizeof(selected) - 1U);
     close(outpipe[0]); outpipe[0] = -1;
     if (waitpid(pid, &status, 0) < 0) goto fail;
-    if (n <= 0 || !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 1) {
         free_entries(entries, len);
         return 0;
+    }
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        errno = EIO;
+        goto fail;
+    }
+    if (n <= 0) {
+        errno = EPROTO;
+        goto fail;
     }
     selected[n] = '\0';
     if (strchr(selected, '\t') != NULL) *strchr(selected, '\t') = '\0';
     if (strchr(selected, '\n') != NULL) *strchr(selected, '\n') = '\0';
     if (rawclip_parse_u64(selected, &id) != 0) { errno = EPROTO; goto fail; }
     snprintf(idbuf, sizeof(idbuf), "%llu", (unsigned long long)id);
-    if (request_once(RAWCLIP_IPC_SELECT, idbuf, &reply) != 0) goto fail;
+    if (request_once(action == MENU_DELETE ? RAWCLIP_IPC_DELETE : RAWCLIP_IPC_SELECT,
+                     idbuf, &reply) != 0) goto fail;
     status = print_reply(&reply, false);
     rawclip_ipc_frame_destroy(&reply);
     free_entries(entries, len);
@@ -316,13 +353,18 @@ main(int argc, char **argv)
     if (optind != argc) { usage(stderr); return 2; }
 
     if (strcmp(cmd, "menu") == 0) {
-        if (arg != NULL) { usage(stderr); return 2; }
+        enum menu_action action = MENU_SELECT;
+        if (arg != NULL) {
+            if (strcmp(arg, "select") == 0) action = MENU_SELECT;
+            else if (strcmp(arg, "delete") == 0) action = MENU_DELETE;
+            else { usage(stderr); return 2; }
+        }
         memset(&cfg, 0, sizeof(cfg));
         if (rawclip_config_load(&cfg, config_path, err, sizeof(err)) != 0) {
             fprintf(stderr, "rawclip: %s\n", err[0] ? err : strerror(errno));
             return 1;
         }
-        rc = menu_command(&cfg);
+        rc = menu_command(&cfg, action);
         rawclip_config_destroy(&cfg);
         if (rc < 0) fprintf(stderr, "rawclip: menu: %s\n", strerror(errno));
         return rc < 0 ? 1 : rc;
