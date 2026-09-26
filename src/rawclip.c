@@ -231,7 +231,8 @@ menu_command(const struct rawclip_config *cfg)
     pid = fork();
     if (pid < 0) goto fail;
     if (pid == 0) {
-        char *const argv[] = {cfg->menu_command, (char *)"select", (char *)"-p", cfg->menu_prompt, NULL};
+        char *const argv[] = {cfg->menu_command, (char *)"-M", (char *)"select",
+                              (char *)"-p", cfg->menu_prompt, NULL};
         dup2(inpipe[0], STDIN_FILENO);
         dup2(outpipe[1], STDOUT_FILENO);
         close(inpipe[0]); close(inpipe[1]); close(outpipe[0]); close(outpipe[1]);
