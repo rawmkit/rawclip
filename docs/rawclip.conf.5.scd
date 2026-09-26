@@ -22,8 +22,13 @@ Unknown keys and wrong scalar types are errors.
 	Default: 131072.
 
 *history.deduplicate* = boolean
-	Move duplicate text to the newest position while retaining its stable ID.
-	Default: true.
+	Move duplicate text to the newest position while retaining its stable ID and
+	pin state. Default: true.
+
+Pinned entries are protected from automatic capacity/size eviction. If all
+retained entries are pinned at *history.max_entries*, new distinct captures are
+dropped. Reload fails rather than evicting a pinned entry to satisfy tighter
+history limits. Pin state is in-memory only.
 
 # SELECTION
 
@@ -58,8 +63,8 @@ pasteable without a copy action and is therefore opt-in.
 	Default: "rawmenu".
 
 *menu.prompt* = string
-	Prompt passed to the menu frontend. Delete mode appends " delete".
-	Default: "clipboard".
+	Prompt passed to the menu frontend. Delete mode appends " delete" and pin
+	toggle mode appends " pin". Default: "clipboard".
 
 *menu.preview_chars* = integer
 	Maximum UTF-8 characters rendered from each history entry in the menu. Text

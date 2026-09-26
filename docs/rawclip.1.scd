@@ -17,15 +17,18 @@ monitor X11 selections itself and does not own persistent history.
 
 # COMMANDS
 
-*menu* [*select*|*delete*]
+*menu* [*select*|*delete*|*toggle-pin*]
 	Present current history through the configured rawmenu selector. The default
 	and explicit *select* action replay the selected entry as CLIPBOARD; *delete*
-	removes the selected history entry without changing clipboard ownership. The configured executable is invoked with
+	removes the selected history entry without changing clipboard ownership;
+	*toggle-pin* atomically flips automatic-eviction protection for the selected
+	entry. The configured executable is invoked with
 	*-M select -p* _prompt_. Empty history is a successful no-op and is reported
 	on standard error.
 
 *list*
-	Print stable numeric IDs and single-line human previews.
+	Print stable numeric IDs, a pin marker (*\** pinned, *-* unpinned), and
+	single-line human previews.
 
 *show* _id_
 	Write the exact stored text bytes for one entry.
@@ -35,18 +38,25 @@ monitor X11 selections itself and does not own persistent history.
 	clipboard-to-primary synchronization mirrors the replay to PRIMARY.
 
 *delete* _id_
-	Delete one history entry.
+	Delete one history entry, including a pinned entry.
 
-*clear*
-	Delete all history and release CLIPBOARD or PRIMARY selections currently owned
-	by rawclipd.
+*pin* _id_
+	Protect one history entry from automatic eviction.
+
+*unpin* _id_
+	Remove automatic-eviction protection from one history entry.
+
+*clear* [*unpinned*]
+	Without an argument, delete all history and release CLIPBOARD or PRIMARY
+	selections currently owned by rawclipd. With *unpinned*, remove only unpinned
+	history and leave current selection ownership unchanged.
 
 *pause*, *resume*, *toggle*
 	Control capture without destroying existing history.
 
 *status*
-	Print daemon/history policy plus live receive, outgoing transfer, and current
-	rawclip-owned selection state.
+	Print daemon/history policy, entry and pinned counts, plus live receive,
+	outgoing transfer, and current rawclip-owned selection state.
 
 *health*
 	Probe the authenticated daemon control path. Print *ok* and exit zero when the

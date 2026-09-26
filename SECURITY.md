@@ -131,8 +131,15 @@ libconfig policy is strict. Unknown keys and wrong scalar types are errors.
 An explicit `-c` file replaces system/XDG layers. Reload parses a complete new
 configuration before replacing live policy.
 
-Tightening history limits during reload immediately evicts entries which no
-longer satisfy the new bounds.
+Tightening history limits during reload may immediately evict unpinned entries
+which no longer satisfy the new bounds. Pinned entries are automatic-eviction
+barriers: reload fails rather than evicting them or accepting a byte limit below
+a pinned entry's size. If every slot is pinned, a new distinct capture is
+dropped without synchronization and without terminating the daemon.
+
+Pins are memory-only policy, not persistence. They protect against automatic
+eviction only. Explicit `delete` and full `clear` remain authoritative over
+pinned entries; `clear unpinned` preserves them.
 
 ## Menu boundary
 
@@ -144,10 +151,12 @@ COMMAND -M select -p PROMPT
 ```
 
 The menu receives sanitized previews rather than raw multiline text, prefixed
-with stable numeric IDs. Preview length is bounded by `menu.preview_chars` and
-truncation is UTF-8 character-safe. The selected ID is revalidated by rawclipd before clipboard ownership changes
-or history deletion. Menu exit status 1 is cancellation; other frontend failures
-and malformed successful output are reported as errors.
+with stable numeric IDs and a human pin marker. Preview length is bounded by
+`menu.preview_chars` and truncation is UTF-8 character-safe. The selected ID is
+revalidated by rawclipd before clipboard ownership, deletion, or pin state
+changes. Pin toggling is atomic in the single daemon authority. Menu exit status
+1 is cancellation; other frontend failures and malformed successful output are
+reported as errors.
 
 rawclip does not register global shortcuts. Keyboard authority belongs to the
 window manager.

@@ -15,8 +15,9 @@ rawclipd - X11 clipboard history and replay service
 # DESCRIPTION
 
 *rawclipd* monitors configured X11 selections with XFixes, applies capture
-policy before requesting text, stores bounded history in memory, and serves
-selected entries as the CLIPBOARD owner. Optional policy can synchronize admitted
+policy before requesting text, stores bounded history in memory, including
+optional in-memory pin state, and serves selected entries as the CLIPBOARD
+owner. Optional policy can synchronize admitted
 PRIMARY and CLIPBOARD text in either direction. Direct and ICCCM INCR transfers
 are supported in both capture and replay directions.
 
@@ -39,7 +40,8 @@ bindings belong to the surrounding desktop/window-manager configuration.
 
 *SIGHUP*
 	Reload configuration atomically. A failed reload leaves existing live
-	policy in place.
+	policy in place. History-limit changes which would evict pinned entries are
+	rejected.
 
 *SIGINT*, *SIGTERM*
 	Stop the daemon and destroy in-memory history.

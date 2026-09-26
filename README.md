@@ -90,11 +90,15 @@ with Linux peer credentials.
 ```text
 rawclip menu
 rawclip menu delete
+rawclip menu toggle-pin
 rawclip list
 rawclip show ID
 rawclip select ID
 rawclip delete ID
+rawclip pin ID
+rawclip unpin ID
 rawclip clear
+rawclip clear unpinned
 rawclip pause
 rawclip resume
 rawclip toggle
@@ -103,9 +107,22 @@ rawclip health
 rawclip reload
 ```
 
-`rawclip list` prints stable history IDs and a single-line human preview.
-`rawclip show ID` writes the exact stored text bytes. `rawclip select ID` asks
-`rawclipd` to become the X11 `CLIPBOARD` owner for that entry.
+`rawclip list` prints stable history IDs, a pin marker (`*` pinned, `-`
+unpinned), and a single-line human preview. `rawclip show ID` writes the exact
+stored text bytes. `rawclip select ID` asks `rawclipd` to become the X11
+`CLIPBOARD` owner for that entry.
+
+`rawclip pin ID` protects an entry from automatic history eviction. `unpin`
+removes that protection. Pin state is intentionally memory-only and disappears
+with the daemon. Deduplication preserves an existing pin while moving the
+duplicate to the newest position. If history is at capacity and every retained
+entry is pinned, a new distinct capture is dropped rather than evicting pinned
+state.
+
+`rawclip clear` retains its original destructive meaning: delete every history
+entry and release selections currently owned by rawclipd. `rawclip clear
+unpinned` removes only unpinned history and does not change current selection
+ownership. Explicit `delete ID` may delete a pinned entry.
 
 `rawclip menu` obtains the current history over IPC, feeds stable IDs plus
 sanitized previews to:
@@ -115,7 +132,9 @@ rawmenu -M select -p clipboard
 ```
 
 and replays the selected ID. `rawclip menu delete` uses the same selector to
-remove one chosen history entry without changing clipboard ownership. No shell
+remove one chosen history entry without changing clipboard ownership. `rawclip
+menu toggle-pin` atomically flips the selected entry's pin state. Pin markers are
+shown in the chooser, but are not part of stored clipboard text. No shell
 evaluates the menu command.
 
 Cancellation is not an error and leaves the current clipboard untouched. An empty
@@ -246,10 +265,16 @@ PRIMARY to CLIPBOARD is a stronger policy: highlighted text can become explicitl
 pasteable without a copy action. For that reason every synchronization direction
 is opt-in and `none` remains the default.
 
-`rawclip status` reports live monitor flags, synchronization mode, current
-rawclip-owned selections, pending receive state, and outgoing INCR transfer
-count. `rawclip health` is the smaller supervision probe: success means the
-daemon accepted and serviced an authenticated request in its event loop.
+`rawclip status` reports live monitor flags, synchronization mode, history and
+pinned-entry counts, current rawclip-owned selections, pending receive state,
+and outgoing INCR transfer count. `rawclip health` is the smaller supervision
+probe: success means the daemon accepted and serviced an authenticated request
+in its event loop.
+
+Tightening history limits on reload may evict unpinned entries immediately. A
+reload that would require evicting a pinned entry, or make a pinned entry exceed
+`history.max_entry_bytes`, fails and leaves the previous live policy/history
+authority in place.
 
 ## Persistence
 
