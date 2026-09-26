@@ -1,3 +1,46 @@
+rawclip 1.0.0 — 2026-09-26
+==========================
+
+Contract freeze
+---------------
+
+* Freeze the documented command forms, exit-status classes, configuration
+  schema and semantics, signal behavior, environment roles, exact `show` bytes,
+  `health` success output, and `list` ID/pin fields as the public 1.x contract.
+* Keep human diagnostics, `status` formatting, rawmenu presentation, runtime
+  endpoint basenames, private X atoms, and client/daemon IPC framing outside the
+  stable ABI so those implementation details can evolve.
+* Declare Linux/X11 as the supported runtime platform and require matching
+  rawclip/rawclipd installations across private IPC changes.
+
+Installation and local authority
+--------------------------------
+
+* Derive runtime system-configuration lookup from Meson's configured sysconfdir
+  so the installed policy and the policy opened by the binaries cannot diverge
+  under non-default prefixes.
+* Key the private control endpoint by X server rather than literal DISPLAY
+  spelling: numeric screen aliases share one endpoint, while endpoint encoding
+  remains collision-free for distinct transport/display identities.
+* Make failed configuration loads all-or-nothing for callers and align rawclipd
+  usage text with its enforced standalone version/config-validation forms.
+
+X11 and memory qualification
+----------------------------
+
+* Complete the ICCCM selection-owner contract with TARGETS, MULTIPLE, and
+  TIMESTAMP support; MULTIPLE conversions report each subrequest independently.
+* Replace optimizable dead-buffer memset calls with explicit erasure for
+  rawclip-owned history, selection, transfer, IPC, and menu copies. This remains
+  memory hygiene rather than a secure-memory guarantee.
+
+Testing
+-------
+
+* Add build-contract coverage for the compiled sysconfdir, control-endpoint
+  alias/collision tests, failed-config ownership checks, and MULTIPLE conversion
+  coverage in the real X11 integration fixture.
+
 rawclip 0.7.1 — 2026-09-26
 ==========================
 
