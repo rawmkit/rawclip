@@ -632,9 +632,13 @@ selection_notify(struct rawclip_x11 *x, const XSelectionEvent *ev)
         }
     } else if (x->stage == RECEIVE_TEXT) {
         if (actual == x->incr) {
-            x->stage = RECEIVE_INCR;
-            XDeleteProperty(x->dpy, x->win, x->property);
-            XFlush(x->dpy);
+            if (format != 32 || data == NULL || nitems != 1U) {
+                reset_receive(x);
+            } else {
+                x->stage = RECEIVE_INCR;
+                XDeleteProperty(x->dpy, x->win, x->property);
+                XFlush(x->dpy);
+            }
         } else if (format == 8 && data != NULL) {
             if (actual == x->string) {
                 char *utf8 = NULL;
@@ -689,12 +693,11 @@ property_notify(struct rawclip_x11 *x, const XPropertyEvent *ev)
     if (after != 0U) {
         XDeleteProperty(x->dpy, x->win, x->property);
         reset_receive(x);
+    } else if (format != 8 || actual != x->pending_target ||
+               (nitems > 0U && data == NULL)) {
+        reset_receive(x);
     } else if (nitems == 0U) {
         rc = finish_text(x);
-    } else if (format != 8 || data == NULL) {
-        reset_receive(x);
-    } else if (actual != x->pending_target) {
-        reset_receive(x);
     } else if (x->pending_target == x->string) {
         char *utf8 = NULL;
         size_t utf8_len = 0U;
@@ -948,6 +951,11 @@ rawclip_x11_set_config(struct rawclip_x11 *x, const struct rawclip_config *cfg)
 {
     Atom selections[2] = {x->clipboard, x->primary};
     size_t i;
+
+    /* A pending receive was admitted under the old policy epoch. Do not let
+     * its later replies cross an exclusion, sensitivity, monitor, or size
+     * boundary that was replaced by this reload. */
+    reset_receive(x);
     for (i = 0U; i < 2U; i++) {
         struct owned_selection *owned = owned_slot(x, selections[i]);
         if (owned != NULL && owned->synchronized &&

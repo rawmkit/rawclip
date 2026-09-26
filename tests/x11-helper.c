@@ -31,9 +31,31 @@ server_direct_bytes(Display *dpy)
     return max_request > 1024 ? ((size_t)max_request - 256U) * 4U : 65536U;
 }
 
+static void
+sleep_ms(unsigned int ms)
+{
+    struct timespec ts;
+    ts.tv_sec = (time_t)(ms / 1000U);
+    ts.tv_nsec = (long)(ms % 1000U) * 1000000L;
+    while (nanosleep(&ts, &ts) != 0 && errno == EINTR) {}
+}
+
+static void
+mark_text_request(const char *path)
+{
+    FILE *f;
+    if (path == NULL) return;
+    f = fopen(path, "w");
+    if (f == NULL) return;
+    fputs("requested\n", f);
+    fclose(f);
+}
+
 static int
 offer(const char *text, size_t text_len, const char *hint_value,
-      bool broken_hint, const char *class_name, bool primary_selection)
+      bool broken_hint, const char *class_name, bool primary_selection,
+      unsigned int delay_text_ms, const char *text_request_marker,
+      bool bad_incr_header, bool bad_incr_end)
 {
     Display *dpy = XOpenDisplay(NULL);
     Window win;
@@ -99,7 +121,14 @@ offer(const char *text, size_t text_len, const char *hint_value,
                     ok = true;
                 } else if (req->target == utf8) {
                     text_requests++;
-                    if (text_len <= direct_bytes) {
+                    mark_text_request(text_request_marker);
+                    if (delay_text_ms > 0U) sleep_ms(delay_text_ms);
+                    if (bad_incr_header) {
+                        unsigned char bogus = 1U;
+                        XChangeProperty(dpy, req->requestor, property, incr, 8,
+                                        PropModeReplace, &bogus, 1);
+                        ok = true;
+                    } else if (text_len <= direct_bytes) {
                         XChangeProperty(dpy, req->requestor, property, utf8, 8,
                                         PropModeReplace, (const unsigned char *)text,
                                         (int)text_len);
@@ -143,8 +172,10 @@ offer(const char *text, size_t text_len, const char *hint_value,
                                     (int)chunk);
                     send_offset += chunk;
                 } else {
-                    XChangeProperty(dpy, send_requestor, send_property, utf8, 8,
-                                    PropModeReplace, (const unsigned char *)"", 0);
+                    XChangeProperty(dpy, send_requestor, send_property,
+                                    bad_incr_end ? XA_STRING : utf8,
+                                    bad_incr_end ? 32 : 8, PropModeReplace,
+                                    (const unsigned char *)"", 0);
                     XSelectInput(dpy, send_requestor, NoEventMask);
                     send_active = false;
                     send_requestor = None;
@@ -390,7 +421,8 @@ main(int argc, char **argv)
     if (argc == 2 && strcmp(argv[1], "paste-string") == 0) return paste(false, true, false);
     if (argc == 2 && strcmp(argv[1], "paste-abort") == 0) return paste(true, false, false);
     if (argc == 2 && strcmp(argv[1], "probe-owner") == 0) return probe_owner();
-    if (argc == 3 && strcmp(argv[1], "offer-size") == 0) {
+    if (argc == 3 && (strcmp(argv[1], "offer-size") == 0 ||
+                      strcmp(argv[1], "offer-size-bad-end") == 0)) {
         size_t len;
         char *text;
         int rc;
@@ -399,7 +431,8 @@ main(int argc, char **argv)
         if (text == NULL) return 2;
         memset(text, 'L', len);
         text[len] = '\0';
-        rc = offer(text, len, NULL, false, NULL, false);
+        rc = offer(text, len, NULL, false, NULL, false, 0U, NULL, false,
+                   strcmp(argv[1], "offer-size-bad-end") == 0);
         free(text);
         return rc;
     }
@@ -407,7 +440,10 @@ main(int argc, char **argv)
         const char *hint_value = NULL;
         bool broken_hint = false;
         bool primary_selection = false;
+        bool bad_incr_header = false;
         const char *class_name = NULL;
+        const char *text_request_marker = NULL;
+        unsigned int delay_text_ms = 0U;
         int i;
         for (i = 3; i < argc; i++) {
             if (strcmp(argv[i], "--secret") == 0) hint_value = "secret";
@@ -415,11 +451,22 @@ main(int argc, char **argv)
             else if (strcmp(argv[i], "--broken-hint") == 0) broken_hint = true;
             else if (strcmp(argv[i], "--class") == 0 && i + 1 < argc) class_name = argv[++i];
             else if (strcmp(argv[i], "--primary") == 0) primary_selection = true;
-            else return 2;
+            else if (strcmp(argv[i], "--bad-incr-header") == 0) bad_incr_header = true;
+            else if (strcmp(argv[i], "--text-request-marker") == 0 && i + 1 < argc)
+                text_request_marker = argv[++i];
+            else if (strcmp(argv[i], "--delay-text-ms") == 0 && i + 1 < argc) {
+                char *end = NULL;
+                unsigned long value;
+                errno = 0;
+                value = strtoul(argv[++i], &end, 10);
+                if (errno != 0 || end == argv[i] || *end != '\0' || value > 10000UL) return 2;
+                delay_text_ms = (unsigned int)value;
+            } else return 2;
         }
         if (broken_hint && hint_value != NULL) return 2;
         return offer(argv[2], strlen(argv[2]), hint_value, broken_hint, class_name,
-                     primary_selection);
+                     primary_selection, delay_text_ms, text_request_marker,
+                     bad_incr_header, false);
     }
     return 2;
 }

@@ -121,6 +121,54 @@ wait "$owner_pid"
 owner_pid=
 grep -q '^text_requests=0$' "$state/excluded-owner.out"
 
+# A transfer admitted under the old policy epoch must not complete after a
+# reload tightens owner exclusion. Wait until the text request is in flight so
+# the regression specifically crosses the reload boundary.
+cp "$state/rawclip.conf" "$state/rawclip.conf.before-epoch"
+rm -f "$state/epoch-requested"
+"$helper" offer 'stale-policy-value' --class EpochApp --delay-text-ms 500 \
+    --text-request-marker "$state/epoch-requested" >"$state/epoch-owner.out" &
+owner_pid=$!
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    [ -f "$state/epoch-requested" ] && break || sleep 0.05
+done
+[ -f "$state/epoch-requested" ]
+cat >"$state/rawclip.conf" <<EOF2
+history = { max_entries = 8; max_entry_bytes = 524288; deduplicate = true; };
+selection = { clipboard = true; primary = false; };
+security = { honor_password_manager_hint = true; };
+menu = { command = "$state/fake-menu"; prompt = "clipboard"; preview_chars = 3; };
+exclude = ( { class = "EpochApp"; } );
+EOF2
+"$rawclip" reload
+sleep 0.6
+! "$rawclip" list | grep -q 'stale-policy-value'
+[ "$("$rawclip" health)" = 'ok' ]
+kill "$owner_pid"
+wait "$owner_pid"
+owner_pid=
+mv "$state/rawclip.conf.before-epoch" "$state/rawclip.conf"
+"$rawclip" reload
+
+# Malformed INCR framing is rejected rather than treated as a valid text
+# transfer or terminator.
+"$helper" offer 'bad-incr-header-value' --bad-incr-header >"$state/bad-incr-header.out" &
+owner_pid=$!
+sleep 0.15
+! "$rawclip" list | grep -q 'bad-incr-header-value'
+[ "$("$rawclip" health)" = 'ok' ]
+kill "$owner_pid"
+wait "$owner_pid"
+owner_pid=
+"$helper" offer-size-bad-end 400000 >"$state/bad-incr-end.out" &
+owner_pid=$!
+sleep 0.3
+[ -z "$("$rawclip" list)" ]
+[ "$("$rawclip" health)" = 'ok' ]
+kill "$owner_pid"
+wait "$owner_pid"
+owner_pid=
+
 # Ordinary text is captured once, deduplicated, and replayable.
 "$helper" offer 'alpha-value' >"$state/alpha-owner.out" &
 owner_pid=$!
