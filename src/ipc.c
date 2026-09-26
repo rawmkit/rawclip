@@ -1,3 +1,6 @@
+#define _GNU_SOURCE
+#define _POSIX_C_SOURCE 200809L
+
 #include "ipc.h"
 #include "rawclip.h"
 #include "util.h"
@@ -7,6 +10,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 static uint16_t
 read_u16(const unsigned char *p)
@@ -22,6 +29,45 @@ read_u32(const unsigned char *p)
     uint32_t v;
     memcpy(&v, p, sizeof(v));
     return ntohl(v);
+}
+
+
+int
+rawclip_ipc_validate_runtime_dir(void)
+{
+    const char *path = getenv("XDG_RUNTIME_DIR");
+    struct stat sb;
+
+    if (path == NULL || path[0] != '/' || stat(path, &sb) != 0) {
+        if (path == NULL || path[0] != '/') errno = ENOENT;
+        return -1;
+    }
+    if (!S_ISDIR(sb.st_mode) || sb.st_uid != getuid() ||
+        (sb.st_mode & (S_IWGRP | S_IWOTH)) != 0) {
+        errno = EPERM;
+        return -1;
+    }
+    return 0;
+}
+
+int
+rawclip_ipc_peer_is_current_user(int fd)
+{
+#ifdef SO_PEERCRED
+    struct ucred cred;
+    socklen_t len = sizeof(cred);
+
+    if (getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &cred, &len) != 0) return -1;
+    if (len != sizeof(cred) || cred.uid != getuid()) {
+        errno = EPERM;
+        return -1;
+    }
+    return 0;
+#else
+    (void)fd;
+    errno = ENOTSUP;
+    return -1;
+#endif
 }
 
 int

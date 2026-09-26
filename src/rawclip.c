@@ -41,13 +41,15 @@ connect_daemon(void)
     struct sockaddr_un addr;
     char path[sizeof(addr.sun_path)];
     int fd;
-    if (rawclip_ipc_socket_path(path, sizeof(path), NULL) != 0) return -1;
+    if (rawclip_ipc_validate_runtime_dir() != 0 ||
+        rawclip_ipc_socket_path(path, sizeof(path), NULL) != 0) return -1;
     fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) return -1;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
     memcpy(addr.sun_path, path, strlen(path) + 1U);
-    if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+    if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0 ||
+        rawclip_ipc_peer_is_current_user(fd) != 0) {
         int saved = errno;
         close(fd);
         errno = saved;

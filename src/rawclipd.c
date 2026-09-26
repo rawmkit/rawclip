@@ -66,19 +66,6 @@ capture_text(void *userdata, const char *text, size_t len, uint64_t timestamp_ms
 }
 
 static int
-validate_runtime_dir(void)
-{
-    const char *path = getenv("XDG_RUNTIME_DIR");
-    struct stat sb;
-    if (path == NULL || path[0] != '/' || stat(path, &sb) != 0) return -1;
-    if (!S_ISDIR(sb.st_mode) || sb.st_uid != getuid() || (sb.st_mode & (S_IWGRP | S_IWOTH)) != 0) {
-        errno = EPERM;
-        return -1;
-    }
-    return 0;
-}
-
-static int
 setup_socket(struct daemon_state *st)
 {
     struct sockaddr_un addr;
@@ -86,7 +73,7 @@ setup_socket(struct daemon_state *st)
     int fd;
     int n;
 
-    if (validate_runtime_dir() != 0) return -1;
+    if (rawclip_ipc_validate_runtime_dir() != 0) return -1;
     if (rawclip_ipc_socket_path(st->socket_path, sizeof(st->socket_path), NULL) != 0) return -1;
     n = snprintf(st->lock_path, sizeof(st->lock_path), "%s.lock", st->socket_path);
     if (n < 0 || (size_t)n >= sizeof(st->lock_path)) {
@@ -99,6 +86,7 @@ setup_socket(struct daemon_state *st)
         errno = EPERM;
         return -1;
     }
+    if (fchmod(st->lock_fd, S_IRUSR | S_IWUSR) != 0) return -1;
     if (flock(st->lock_fd, LOCK_EX | LOCK_NB) != 0) return -1;
 
     if (unlink(st->socket_path) != 0 && errno != ENOENT) return -1;
@@ -134,25 +122,6 @@ bound_client_io(int fd)
     tv.tv_sec = 1;
     (void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     (void)setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-}
-
-static int
-peer_authorized(int fd)
-{
-#ifdef SO_PEERCRED
-    struct ucred cred;
-    socklen_t len = sizeof(cred);
-    if (getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &cred, &len) != 0) return -1;
-    if (cred.uid != getuid()) {
-        errno = EPERM;
-        return -1;
-    }
-    return 0;
-#else
-    (void)fd;
-    errno = ENOTSUP;
-    return -1;
-#endif
 }
 
 static int
@@ -205,7 +174,7 @@ handle_client(struct daemon_state *st, int fd)
     char status[384];
     struct rawclip_x11_status xstatus;
 
-    if (peer_authorized(fd) != 0) return -1;
+    if (rawclip_ipc_peer_is_current_user(fd) != 0) return -1;
     if (rawclip_ipc_recv(fd, &frame) != 0) return -1;
     switch (frame.type) {
     case RAWCLIP_IPC_STATUS:

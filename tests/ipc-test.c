@@ -5,9 +5,11 @@
 #include <assert.h>
 #include <errno.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 int
@@ -16,9 +18,12 @@ main(void)
     int sv[2];
     struct rawclip_ipc_frame frame;
     char path[256];
+    char runtime[] = "/tmp/rawclip-ipc-test.XXXXXX";
     unsigned char bad[12] = {0};
 
     assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0);
+    assert(rawclip_ipc_peer_is_current_user(sv[0]) == 0);
+    assert(rawclip_ipc_peer_is_current_user(sv[1]) == 0);
     assert(rawclip_ipc_send(sv[0], RAWCLIP_IPC_DATA, "hello", 5U) == 0);
     assert(rawclip_ipc_recv(sv[1], &frame) == 0);
     assert(frame.type == RAWCLIP_IPC_DATA);
@@ -47,8 +52,21 @@ main(void)
         free(payload);
     }
 
-    assert(setenv("XDG_RUNTIME_DIR", "/tmp/runtime-test", 1) == 0);
+    assert(mkdtemp(runtime) != NULL);
+    assert(chmod(runtime, 0700) == 0);
+    assert(setenv("XDG_RUNTIME_DIR", runtime, 1) == 0);
+    assert(rawclip_ipc_validate_runtime_dir() == 0);
     assert(rawclip_ipc_socket_path(path, sizeof(path), ":0.0") == 0);
-    assert(strcmp(path, "/tmp/runtime-test/rawclip-_0_0.sock") == 0);
+    {
+        char expected[512];
+        assert(snprintf(expected, sizeof(expected), "%s/rawclip-_0_0.sock", runtime) > 0);
+        assert(strcmp(path, expected) == 0);
+    }
+    assert(chmod(runtime, 0770) == 0);
+    errno = 0;
+    assert(rawclip_ipc_validate_runtime_dir() == -1);
+    assert(errno == EPERM);
+    assert(chmod(runtime, 0700) == 0);
+    assert(rmdir(runtime) == 0);
     return 0;
 }
