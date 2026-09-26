@@ -114,6 +114,18 @@ parse_rules(config_t *c, struct rawclip_config *cfg, char *err, size_t err_size)
         errno = EINVAL;
         return -1;
     }
+    {
+        size_t old_i;
+        for (old_i = 0U; old_i < cfg->rules_len; old_i++) {
+            free(cfg->rules[old_i].instance);
+            free(cfg->rules[old_i].class_name);
+            free(cfg->rules[old_i].title);
+            free(cfg->rules[old_i].executable);
+        }
+        free(cfg->rules);
+        cfg->rules = NULL;
+        cfg->rules_len = 0U;
+    }
     if (n == 0) {
         return 0;
     }
@@ -149,10 +161,18 @@ parse_rules(config_t *c, struct rawclip_config *cfg, char *err, size_t err_size)
             errno = EINVAL;
             return -1;
         }
-        if (config_setting_length(rule) > 4) {
-            set_error(err, err_size, "exclude[%d] contains unknown fields", i);
-            errno = EINVAL;
-            return -1;
+        {
+            int j;
+            for (j = 0; j < config_setting_length(rule); j++) {
+                config_setting_t *field = config_setting_get_elem(rule, j);
+                const char *name = field == NULL ? NULL : config_setting_name(field);
+                if (name == NULL || (strcmp(name, "instance") != 0 && strcmp(name, "class") != 0 &&
+                                     strcmp(name, "title") != 0 && strcmp(name, "executable") != 0)) {
+                    set_error(err, err_size, "exclude[%d] contains unknown fields", i);
+                    errno = EINVAL;
+                    return -1;
+                }
+            }
         }
     }
     return 0;

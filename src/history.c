@@ -191,9 +191,22 @@ void
 rawclip_history_reconfigure(struct rawclip_history *h, size_t max_entries,
                             size_t max_entry_bytes, bool deduplicate)
 {
+    size_t i = 0U;
     h->max_entries = max_entries;
     h->max_entry_bytes = max_entry_bytes;
     h->deduplicate = deduplicate;
+    while (i < h->len) {
+        if (h->entries[i].len > max_entry_bytes) {
+            entry_destroy(&h->entries[i]);
+            if (i + 1U < h->len) {
+                memmove(&h->entries[i], &h->entries[i + 1U],
+                        (h->len - i - 1U) * sizeof(h->entries[0]));
+            }
+            h->len--;
+        } else {
+            i++;
+        }
+    }
     while (h->len > h->max_entries) {
         evict_oldest(h);
     }

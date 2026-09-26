@@ -53,12 +53,14 @@ struct rawclip_x11 {
     void *userdata;
     bool paused;
     Atom pending_selection;
+    Atom pending_target;
     Window pending_owner;
     enum receive_stage stage;
     unsigned char *buf;
     size_t buf_len;
     size_t buf_cap;
     size_t max_direct_bytes;
+    size_t server_direct_bytes;
     char *owned_text;
     size_t owned_len;
     Time owned_time;
@@ -215,6 +217,7 @@ reset_receive(struct rawclip_x11 *x)
     x->buf_cap = 0U;
     x->stage = RECEIVE_IDLE;
     x->pending_selection = None;
+    x->pending_target = None;
     x->pending_owner = None;
     XDeleteProperty(x->dpy, x->win, x->property);
 }
@@ -275,6 +278,7 @@ request_text(struct rawclip_x11 *x, const Atom *atoms, unsigned long n)
         return 0;
     }
     x->stage = RECEIVE_TEXT;
+    x->pending_target = target;
     XConvertSelection(x->dpy, x->pending_selection, target, x->property, x->win, CurrentTime);
     XFlush(x->dpy);
     return 0;
@@ -293,7 +297,7 @@ selection_notify(struct rawclip_x11 *x, const XSelectionEvent *ev)
         if (ev->requestor == x->win && ev->selection == x->pending_selection) reset_receive(x);
         return 0;
     }
-    if (XGetWindowProperty(x->dpy, x->win, x->property, 0, LONG_MAX / 4, True,
+    if (XGetWindowProperty(x->dpy, x->win, x->property, 0, (long)((x->cfg->max_entry_bytes + 3U) / 4U + 16U), True,
                            AnyPropertyType, &actual, &format, &nitems, &after, &data) != Success) {
         reset_receive(x);
         return -1;
@@ -316,9 +320,25 @@ selection_notify(struct rawclip_x11 *x, const XSelectionEvent *ev)
             XDeleteProperty(x->dpy, x->win, x->property);
             XFlush(x->dpy);
         } else if (format == 8 && data != NULL) {
-            if ((size_t)nitems <= x->cfg->max_entry_bytes && (size_t)nitems <= x->max_direct_bytes &&
-                append_receive(x, data, (size_t)nitems) == 0) rc = finish_text(x);
-            else reset_receive(x);
+            if (actual == x->string) {
+                char *utf8 = NULL;
+                size_t utf8_len = 0U;
+                if (rawclip_latin1_to_utf8(data, (size_t)nitems, &utf8, &utf8_len) == 0 &&
+                    utf8_len <= x->cfg->max_entry_bytes && utf8_len <= x->max_direct_bytes &&
+                    memchr(utf8, '\0', utf8_len) == NULL &&
+                    append_receive(x, (const unsigned char *)utf8, utf8_len) == 0) {
+                    rc = finish_text(x);
+                } else {
+                    reset_receive(x);
+                }
+                free(utf8);
+            } else if (actual == x->utf8 && rawclip_utf8_valid(data, (size_t)nitems) &&
+                       (size_t)nitems <= x->cfg->max_entry_bytes && (size_t)nitems <= x->max_direct_bytes &&
+                       append_receive(x, data, (size_t)nitems) == 0) {
+                rc = finish_text(x);
+            } else {
+                reset_receive(x);
+            }
         } else {
             reset_receive(x);
         }
@@ -336,14 +356,24 @@ property_notify(struct rawclip_x11 *x, const XPropertyEvent *ev)
     unsigned char *data = NULL;
     int rc = 0;
     if (x->stage != RECEIVE_INCR || ev->window != x->win || ev->atom != x->property || ev->state != PropertyNewValue) return 0;
-    if (XGetWindowProperty(x->dpy, x->win, x->property, 0, LONG_MAX / 4, True,
+    if (XGetWindowProperty(x->dpy, x->win, x->property, 0, (long)((x->cfg->max_entry_bytes + 3U) / 4U + 16U), True,
                            AnyPropertyType, &actual, &format, &nitems, &after, &data) != Success) {
         reset_receive(x);
         return -1;
     }
     if (nitems == 0U) {
         rc = finish_text(x);
-    } else if (format != 8 || data == NULL || append_receive(x, data, (size_t)nitems) != 0) {
+    } else if (format != 8 || data == NULL) {
+        reset_receive(x);
+    } else if (x->pending_target == x->string) {
+        char *utf8 = NULL;
+        size_t utf8_len = 0U;
+        if (rawclip_latin1_to_utf8(data, (size_t)nitems, &utf8, &utf8_len) != 0 ||
+            append_receive(x, (const unsigned char *)utf8, utf8_len) != 0) {
+            reset_receive(x);
+        }
+        free(utf8);
+    } else if (!rawclip_utf8_valid(data, (size_t)nitems) || append_receive(x, data, (size_t)nitems) != 0) {
         reset_receive(x);
     }
     if (data != NULL) XFree(data);
@@ -389,12 +419,19 @@ selection_request(struct rawclip_x11 *x, const XSelectionRequestEvent *req)
             XChangeProperty(x->dpy, req->requestor, property, XA_INTEGER, 32,
                             PropModeReplace, (unsigned char *)&t, 1);
             ok = true;
-        } else if ((req->target == x->utf8 || req->target == x->string) &&
-                   x->owned_len <= x->max_direct_bytes) {
-            XChangeProperty(x->dpy, req->requestor, property, req->target, 8,
-                            PropModeReplace, (unsigned char *)x->owned_text,
-                            (int)x->owned_len);
+        } else if (req->target == x->utf8 && x->owned_len <= x->max_direct_bytes) {
+            XChangeProperty(x->dpy, req->requestor, property, x->utf8, 8,
+                            PropModeReplace, (unsigned char *)x->owned_text, (int)x->owned_len);
             ok = true;
+        } else if (req->target == x->string && x->owned_len <= x->max_direct_bytes) {
+            unsigned char *latin1 = NULL;
+            size_t latin1_len = 0U;
+            if (rawclip_utf8_to_latin1(x->owned_text, x->owned_len, &latin1, &latin1_len) == 0) {
+                XChangeProperty(x->dpy, req->requestor, property, x->string, 8,
+                                PropModeReplace, latin1, (int)latin1_len);
+                free(latin1);
+                ok = true;
+            }
         }
     }
     if (ok) out.property = property;
@@ -458,8 +495,8 @@ rawclip_x11_create(const struct rawclip_config *cfg, rawclip_capture_fn capture,
     x->capture = capture;
     x->userdata = userdata;
     max_request = XMaxRequestSize(x->dpy);
-    x->max_direct_bytes = max_request > 1024 ? ((size_t)max_request - 256U) * 4U : 65536U;
-    if (x->max_direct_bytes > cfg->max_entry_bytes) x->max_direct_bytes = cfg->max_entry_bytes;
+    x->server_direct_bytes = max_request > 1024 ? ((size_t)max_request - 256U) * 4U : 65536U;
+    x->max_direct_bytes = x->server_direct_bytes < cfg->max_entry_bytes ? x->server_direct_bytes : cfg->max_entry_bytes;
     XFixesSelectSelectionInput(x->dpy, x->win, x->clipboard,
                                XFixesSetSelectionOwnerNotifyMask |
                                XFixesSelectionWindowDestroyNotifyMask |
@@ -525,7 +562,7 @@ void
 rawclip_x11_set_config(struct rawclip_x11 *x, const struct rawclip_config *cfg)
 {
     x->cfg = cfg;
-    if (x->max_direct_bytes > cfg->max_entry_bytes) x->max_direct_bytes = cfg->max_entry_bytes;
+    x->max_direct_bytes = x->server_direct_bytes < cfg->max_entry_bytes ? x->server_direct_bytes : cfg->max_entry_bytes;
 }
 
 int
