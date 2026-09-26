@@ -1,3 +1,52 @@
+rawclip 0.7.0 — 2026-09-26
+==========================
+
+Policy and X11 qualification
+----------------------------
+
+* Reject wrong scalar types in every supplied exclusion-rule field instead of
+  silently ignoring a mistyped field when another valid field is present.
+* Fence configuration policy epochs by aborting an in-flight external selection
+  receive before a successfully parsed reload becomes live. Bytes admitted under
+  old exclusion, sensitive, selection, or size policy cannot complete under the
+  replacement policy.
+* Validate incoming ICCCM INCR framing exactly, including the 32-bit header
+  shape and the negotiated type/8-bit format of the terminal empty property.
+* Drain Xlib's already-buffered event queue before sleeping in poll(2), so
+  ownership changes consumed by synchronous Xlib calls cannot wait indefinitely
+  for unrelated kernel activity.
+
+Local control authority
+-----------------------
+
+* Apply XDG_RUNTIME_DIR ownership/mode checks on both daemon and client and
+  authenticate the connected daemon UID as well as incoming client UIDs with
+  Linux SO_PEERCRED.
+* Normalize the persistent singleton lock to mode 0600.
+* Bound accepted control-client send/receive I/O and ignore SIGPIPE so partial,
+  stalled, or disconnected exchanges remain local request failures rather than
+  terminating the daemon.
+* Treat exceptional poll/accept states as operational failures instead of
+  allowing event-loop spin or ambiguous service state.
+
+CLI and menu contract
+---------------------
+
+* Accept entry IDs only as nonzero ASCII decimal with explicit overflow checks;
+  signs, whitespace, zero, and overflow are command-line misuse with status 2.
+* Make -v a standalone form and reject rawclip -c PATH for commands other than
+  menu, where the path is local frontend policy rather than daemon policy.
+* Remove an accidental 255-byte limit from derived delete/pin menu prompts;
+  action prompts now preserve any otherwise-valid configured prompt length.
+
+Testing
+-------
+
+* Cover policy reload during an admitted text request, malformed INCR headers and
+  terminators, unsafe runtime directories, peer credentials, singleton lock mode,
+  aborted replies, partial control frames, daemon survival, and long menu prompts
+  under the real XFixes/Xvfb integration path.
+
 rawclip 0.6.0 — 2026-09-26
 ==========================
 
