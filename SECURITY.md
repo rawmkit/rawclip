@@ -130,7 +130,11 @@ a stalled partial frame or a client which closes before its reply is contained
 to that exchange rather than terminating the service.
 
 The IPC protocol is private implementation detail and may change between
-pre-1.0 releases.
+pre-1.0 releases. `rawclip` and `rawclipd` must come from a matching installed
+version. If an upgrade changes the protocol, restart the long-lived daemon
+before using the new client. A reset during the first control exchange is
+reported as a stale/incompatible-daemon condition; rawclip does not negotiate
+or reinterpret older private protocol bytes.
 
 ## Configuration
 

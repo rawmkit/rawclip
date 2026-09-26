@@ -22,7 +22,9 @@ PRIMARY and CLIPBOARD text in either direction. Direct and ICCCM INCR transfers
 are supported in both capture and replay directions.
 
 The daemon remains in the foreground. Session startup and global keyboard
-bindings belong to the surrounding desktop/window-manager configuration.
+bindings belong to the surrounding desktop/window-manager configuration. The
+local control protocol is private to a matching installed *rawclip*(1) client;
+restart this long-lived daemon after an upgrade which changes that protocol.
 
 # OPTIONS
 

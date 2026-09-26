@@ -87,6 +87,14 @@ owned by the current user, and not group/world writable. On Linux each side
 verifies the peer UID, so neither the daemon nor the control client accepts a
 local endpoint owned by another user.
 
+`rawclip` and `rawclipd` are an installed pair. The local IPC protocol is
+private, so an upgrade which changes that protocol requires restarting the
+already-running daemon. A client whose first exchange is reset by a stale or
+incompatible daemon reports that condition explicitly instead of exposing a
+bare socket reset. Restart `rawclipd` (or the owning desktop session) and retry.
+History and pins are memory-only and therefore disappear when the daemon is
+restarted.
+
 ## Commands
 
 ```text
@@ -308,4 +316,6 @@ audited authority rather than a hidden default.
 local menu policy and never changes daemon configuration.
 
 Human-readable diagnostics are not a machine-readable protocol. Local IPC is
-private to matching rawclip/rawclipd versions and is not a public ABI.
+private to matching rawclip/rawclipd versions and is not a public ABI. Restart
+the daemon after upgrading the installed client/daemon pair across an IPC
+revision.

@@ -83,6 +83,11 @@ monitor X11 selections itself and does not own persistent history.
 0 on success or menu cancellation, 1 on runtime or menu-frontend failure, and
 2 on command-line misuse.
 
+The control protocol is private to matching *rawclip*/*rawclipd* versions.
+Restart the running daemon after an upgrade which changes that protocol. A
+connection reset during the first exchange is diagnosed as a possibly stale or
+incompatible daemon rather than as an unexplained socket reset.
+
 # FILES
 
 _$XDG_RUNTIME_DIR/rawclip-DISPLAY.sock_
