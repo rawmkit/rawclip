@@ -45,7 +45,7 @@ set -eu
 [ "$2" = "select" ]
 [ "$3" = "-p" ]
 case "$4" in
-    clipboard|"clipboard delete") ;;
+    clipboard|"clipboard delete"|"clipboard pin") ;;
     *) exit 2 ;;
 esac
 case "${RAWCLIP_TEST_MENU_BEHAVIOR:-select}" in
@@ -146,7 +146,7 @@ fi
 grep -q '^rawclip: menu: Protocol error$' "$state/menu-empty.err"
 RAWCLIP_TEST_MENU_CAPTURE="$state/menu-delete.input" "$rawclip" -c "$state/rawclip.conf" menu delete
 [ -z "$("$rawclip" list)" ]
-[ "$(cat "$state/menu-delete.input")" = "$(printf '%s\t%s' "$id" 'alp…')" ]
+[ "$(cat "$state/menu-delete.input")" = "$(printf '%s\t%s' "$id" '- alp…')" ]
 
 "$helper" offer 'alpha-value' >"$state/alpha-reowner.out" &
 owner_pid=$!
@@ -158,7 +158,32 @@ wait "$owner_pid"
 owner_pid=
 RAWCLIP_TEST_MENU_CAPTURE="$state/menu-select.input" "$rawclip" -c "$state/rawclip.conf" menu
 [ "$("$helper" paste)" = 'alpha-value' ]
-[ "$(cat "$state/menu-select.input")" = "$(printf '%s\t%s' "$id" 'alp…')" ]
+[ "$(cat "$state/menu-select.input")" = "$(printf '%s\t%s' "$id" '- alp…')" ]
+
+# Pinning protects history from automatic cleanup while preserving explicit controls.
+"$rawclip" pin "$id"
+"$rawclip" status | grep -q 'pinned=1'
+printf '%s\n' "$("$rawclip" list)" | grep -F "$(printf '%s\t%s' "$id" '* alpha-value')"
+RAWCLIP_TEST_MENU_CAPTURE="$state/menu-pin.input" "$rawclip" -c "$state/rawclip.conf" menu toggle-pin
+[ "$(cat "$state/menu-pin.input")" = "$(printf '%s\t%s' "$id" '* alp…')" ]
+"$rawclip" status | grep -q 'pinned=0'
+RAWCLIP_TEST_MENU_CAPTURE="$state/menu-repin.input" "$rawclip" -c "$state/rawclip.conf" menu toggle-pin
+[ "$(cat "$state/menu-repin.input")" = "$(printf '%s\t%s' "$id" '- alp…')" ]
+"$rawclip" status | grep -q 'pinned=1'
+
+"$helper" offer 'temporary-value' >"$state/temporary-owner.out" &
+owner_pid=$!
+sleep 0.15
+"$rawclip" list | grep -q 'temporary-value'
+kill "$owner_pid"
+wait "$owner_pid"
+owner_pid=
+"$rawclip" clear unpinned
+line=$("$rawclip" list)
+printf '%s\n' "$line" | grep -q 'alpha-value'
+! printf '%s\n' "$line" | grep -q 'temporary-value'
+"$rawclip" unpin "$id"
+"$rawclip" status | grep -q 'pinned=0'
 
 "$rawclip" clear
 "$helper" offer 'éééé' >"$state/utf8-owner.out" &
@@ -170,7 +195,7 @@ kill "$owner_pid"
 wait "$owner_pid"
 owner_pid=
 RAWCLIP_TEST_MENU_CAPTURE="$state/menu-utf8.input" "$rawclip" -c "$state/rawclip.conf" menu
-[ "$(cat "$state/menu-utf8.input")" = "$(printf '%s\t%s' "$id" 'ééé…')" ]
+[ "$(cat "$state/menu-utf8.input")" = "$(printf '%s\t%s' "$id" '- ééé…')" ]
 "$rawclip" clear
 
 "$helper" offer 'alpha-value' >"$state/alpha-final-owner.out" &
@@ -228,6 +253,54 @@ wait "$owner_pid"
 owner_pid=
 "$rawclip" clear
 "$rawclip" status | grep -q 'receive_pending=0'
+
+# A fully pinned bounded history drops new captures without killing the daemon.
+cp "$state/rawclip.conf" "$state/rawclip.conf.before-pins"
+cat >"$state/rawclip.conf" <<EOF2
+history = { max_entries = 2; max_entry_bytes = 524288; deduplicate = true; };
+selection = { clipboard = true; primary = false; };
+security = { honor_password_manager_hint = true; };
+menu = { command = "$state/fake-menu"; prompt = "clipboard"; preview_chars = 3; };
+exclude = ();
+EOF2
+"$rawclip" reload
+for value in pinned-one pinned-two; do
+    "$helper" offer "$value" >"$state/$value.out" &
+    owner_pid=$!
+    sleep 0.15
+    line=$("$rawclip" list)
+    pid_id=$(printf '%s\n' "$line" | grep "$value" | cut -f1)
+    "$rawclip" pin "$pid_id"
+    kill "$owner_pid"
+    wait "$owner_pid"
+    owner_pid=
+done
+"$rawclip" status | grep -q 'entries=2 pinned=2'
+"$helper" offer 'must-drop' >"$state/must-drop.out" &
+owner_pid=$!
+sleep 0.15
+! "$rawclip" list | grep -q 'must-drop'
+[ "$("$rawclip" health)" = 'ok' ]
+kill "$owner_pid"
+wait "$owner_pid"
+owner_pid=
+# Reload must fail rather than evict pinned state to satisfy tighter limits.
+cat >"$state/rawclip.conf" <<EOF2
+history = { max_entries = 1; max_entry_bytes = 524288; deduplicate = true; };
+selection = { clipboard = true; primary = false; };
+security = { honor_password_manager_hint = true; };
+menu = { command = "$state/fake-menu"; prompt = "clipboard"; preview_chars = 3; };
+exclude = ();
+EOF2
+if "$rawclip" reload >/dev/null 2>&1; then
+    echo 'reload evicted pinned entries to satisfy tighter capacity' >&2
+    exit 1
+fi
+"$rawclip" status | grep -q 'entries=2 pinned=2'
+[ "$("$rawclip" health)" = 'ok' ]
+"$rawclip" clear
+mv "$state/rawclip.conf.before-pins" "$state/rawclip.conf"
+"$rawclip" reload
 
 # Large clipboard values cross both sides of the ICCCM INCR boundary.
 large_bytes=400000
@@ -290,6 +363,48 @@ for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
     "$rawclip" status >/dev/null 2>&1 && break || sleep 0.05
 done
 "$rawclip" status | grep -q 'clipboard=1 primary=1 synchronize=bidirectional'
+
+# Protected-full admission must not leak a dropped PRIMARY value through sync.
+cat >"$state/rawclip-sync.conf" <<EOF2
+history = { max_entries = 1; max_entry_bytes = 524288; deduplicate = true; };
+selection = { clipboard = true; primary = true; synchronize = "bidirectional"; };
+security = { honor_password_manager_hint = true; };
+menu = { command = "$state/fake-menu"; prompt = "clipboard"; };
+exclude = ();
+EOF2
+"$rawclip" reload
+"$helper" offer 'pinned-anchor' >"$state/pinned-anchor.out" &
+owner_pid=$!
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    line=$("$rawclip" list)
+    printf '%s\n' "$line" | grep -q 'pinned-anchor' && break || sleep 0.05
+done
+id=${line%%	*}
+"$rawclip" pin "$id"
+kill "$owner_pid"
+wait "$owner_pid"
+owner_pid=
+"$helper" offer 'drop-primary' --primary >"$state/drop-primary.out" &
+owner_pid=$!
+sleep 0.15
+! "$rawclip" list | grep -q 'drop-primary'
+if "$helper" paste 2>/dev/null | grep -q '^drop-primary$'; then
+    echo 'dropped PRIMARY value was synchronized to CLIPBOARD' >&2
+    exit 1
+fi
+[ "$("$rawclip" health)" = 'ok' ]
+kill "$owner_pid"
+wait "$owner_pid"
+owner_pid=
+"$rawclip" clear
+cat >"$state/rawclip-sync.conf" <<EOF2
+history = { max_entries = 8; max_entry_bytes = 524288; deduplicate = true; };
+selection = { clipboard = true; primary = true; synchronize = "bidirectional"; };
+security = { honor_password_manager_hint = true; };
+menu = { command = "$state/fake-menu"; prompt = "clipboard"; };
+exclude = ();
+EOF2
+"$rawclip" reload
 
 # PRIMARY admission mirrors ordinary text to CLIPBOARD exactly once.
 "$helper" offer 'from-primary' --primary >"$state/primary-owner.out" &

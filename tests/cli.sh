@@ -30,6 +30,18 @@ if "$rawclip" show >/dev/null 2>&1; then
 else
     [ "$?" -eq 2 ]
 fi
+if "$rawclip" pin >/dev/null 2>&1; then
+    echo 'missing pin id succeeded' >&2
+    exit 1
+else
+    [ "$?" -eq 2 ]
+fi
+if "$rawclip" clear bogus >/dev/null 2>&1; then
+    echo 'invalid clear mode succeeded' >&2
+    exit 1
+else
+    [ "$?" -eq 2 ]
+fi
 if "$rawclipd" -C >/dev/null 2>&1; then
     echo 'config check without path succeeded' >&2
     exit 1
