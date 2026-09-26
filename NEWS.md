@@ -1,3 +1,24 @@
+rawclip 0.7.1 — 2026-09-26
+==========================
+
+Upgrade diagnostics
+-------------------
+
+* Diagnose a control connection reset during the first exchange as a stale or
+  incompatible long-lived rawclipd and direct the user to restart the daemon
+  after upgrading rawclip.
+* Distinguish an explicit IPC frame-version mismatch from generic malformed
+  protocol input without carrying backward-compatibility parsing.
+* Document rawclip/rawclipd as a matching installed pair and make daemon restart
+  requirements across private IPC revisions explicit.
+
+Testing
+-------
+
+* Add a stale-daemon regression which reproduces the pre-v2 behavior of
+  accepting the Unix socket, rejecting the newer request header, and closing
+  before a reply.
+
 rawclip 0.7.0 — 2026-09-26
 ==========================
 
