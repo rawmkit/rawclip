@@ -7,8 +7,8 @@ rawclip.conf - rawclip clipboard history policy
 # DESCRIPTION
 
 Configuration uses libconfig syntax. Defaults are compiled in. Without an
-explicit *-c* path, rawclip layers /etc/rawclip/rawclip.conf and the XDG user
-configuration.
+explicit *-c* path, rawclip layers the installed system policy from the
+build-configured _sysconfdir_ and the XDG user configuration.
 
 Unknown keys and wrong scalar types are errors, including known fields inside
 exclusion-rule groups.
@@ -91,8 +91,9 @@ Prefer the password-manager hint when the source application supports it.
 
 # FILES
 
-_/etc/rawclip/rawclip.conf_
-	System policy.
+_sysconfdir/rawclip/rawclip.conf_
+	System policy. The concrete _sysconfdir_ is selected by the build/install
+	configuration.
 
 _$XDG_CONFIG_HOME/rawclip/rawclip.conf_
 	User policy when XDG_CONFIG_HOME is absolute.

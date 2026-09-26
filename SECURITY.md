@@ -46,8 +46,9 @@ required.
 ## History memory
 
 History is process memory only. Entry count and byte size are bounded. Duplicate
-text can be coalesced without changing its stable entry ID. Deleted buffers are
-overwritten before free.
+text can be coalesced without changing its stable entry ID. Rawclip-owned
+clipboard buffers are erased with an explicit non-optimizable wipe before free
+where rawclip controls their lifetime.
 
 This is hygiene, not a secure-memory guarantee. Copies can still exist in Xlib,
 libc, the kernel, source/destination applications, swap, debugging facilities,
@@ -76,7 +77,9 @@ the process; reconnect/recovery is not attempted.
 ## Replay authority
 
 Selecting a history entry makes rawclipd the X11 `CLIPBOARD` owner. It serves
-`TARGETS`, `TIMESTAMP`, `UTF8_STRING`, and representable `STRING` requests.
+`TARGETS`, `MULTIPLE`, `TIMESTAMP`, `UTF8_STRING`, and representable `STRING`
+requests. MULTIPLE conversions are evaluated pair-by-pair so one unsupported
+subrequest does not invalidate successful siblings.
 
 Payloads that fit a safe X server property update are served directly. Larger
 payloads use ICCCM `INCR`: each accepted requestor receives a private snapshot
@@ -116,8 +119,8 @@ CLIPBOARD replay.
 ## Local control socket
 
 The socket lives under `$XDG_RUNTIME_DIR`, which must be absolute, owned by the
-current user, and not group/world writable. The socket mode is 0600. A stable mode-0600 lock file in the same runtime
-directory serializes daemon startup; it is reused rather than unlinked on exit
+current user, and not group/world writable. The socket mode is 0600. A stable mode-0600 lock file in the same
+runtime directory serializes daemon startup; it is reused rather than unlinked on exit
 so lock authority cannot move to a new inode during a successor race.
 
 On Linux, peer authentication is symmetric: rawclipd verifies the connecting
@@ -130,8 +133,8 @@ a stalled partial frame or a client which closes before its reply is contained
 to that exchange rather than terminating the service.
 
 The IPC protocol is private implementation detail and may change between
-pre-1.0 releases. `rawclip` and `rawclipd` must come from a matching installed
-version. If an upgrade changes the protocol, restart the long-lived daemon
+rawclip releases, including within 1.x. `rawclip` and `rawclipd` must come
+from a matching installed version. If an upgrade changes the protocol, restart the long-lived daemon
 before using the new client. A reset during the first control exchange is
 reported as a stale/incompatible-daemon condition; rawclip does not negotiate
 or reinterpret older private protocol bytes.

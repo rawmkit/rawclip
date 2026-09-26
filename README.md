@@ -32,8 +32,9 @@ match. Owner metadata on X11 is advisory and can be absent or misleading, so
 these rules are not a substitute for the sensitive clipboard hint.
 
 History is memory-only. Clearing or exiting `rawclipd` destroys the history.
-Deleted history buffers are overwritten before being released, but rawclip does
-not claim secure-memory semantics: ordinary clipboard text may have existed in
+Rawclip-owned clipboard buffers are explicitly wiped before release where their
+lifetime is under rawclip control, but rawclip does not claim secure-memory
+semantics: ordinary clipboard text may have existed in
 Xlib, allocator, application, swap, core-dump, or kernel buffers.
 
 See `SECURITY.md` for the full boundary.
@@ -51,7 +52,7 @@ Build dependencies:
 
 Runtime integration:
 
-* X11 with XFixes
+* Linux with X11/XFixes
 * `rawmenu` for `rawclip menu`
 
 `Xvfb` is optional and enables the X11 integration test.
@@ -79,8 +80,9 @@ used by the desktop:
 rawclipd &
 ```
 
-The daemon creates one mode-0600 control socket per X display under
-`$XDG_RUNTIME_DIR`. A stable per-display mode-0600 lock file serializes daemon
+The daemon creates one private mode-0600 control endpoint per X server under
+`$XDG_RUNTIME_DIR`; screen aliases such as `:0.0` and `:0.1` address the same
+endpoint. A stable per-X-server mode-0600 lock file serializes daemon
 startup and is intentionally retained in the runtime directory across daemon
 exits. Both `rawclipd` and `rawclip` require the runtime directory to be absolute,
 owned by the current user, and not group/world writable. On Linux each side
@@ -169,7 +171,8 @@ tranche.
 
 The defaults are compiled in. Without `-c`, `rawclipd` layers:
 
-1. `/etc/rawclip/rawclip.conf`
+1. `rawclip/rawclip.conf` below the build-configured system configuration
+   directory (`sysconfdir`);
 2. `$XDG_CONFIG_HOME/rawclip/rawclip.conf`, or
    `$HOME/.config/rawclip/rawclip.conf`
 
@@ -269,8 +272,10 @@ framing is validated exactly: the INCR header must have the required 32-bit
 shape and every data chunk, including the zero-length terminator, must retain the
 negotiated text type and 8-bit format. History admission is bounded by
 `history.max_entry_bytes`, not by the X server's single-request property limit.
-When rawclip owns a selection, values larger than a safe direct property update
-are streamed incrementally to requestors. Outgoing transfers are bounded and
+When rawclip owns a selection, it serves the required ICCCM `TARGETS`,
+`MULTIPLE`, and `TIMESTAMP` conversions in addition to supported text targets.
+Values larger than a safe direct property update are streamed incrementally to
+requestors. Outgoing transfers are bounded and
 abandoned requestors are discarded. Oversized selections are ignored rather
 than truncated.
 
@@ -303,6 +308,29 @@ This is deliberate. A clipboard manager that silently creates a plaintext
 long-lived database changes the security model of every application on the
 desktop. Persistent history, if ever added, must be an explicit separately
 audited authority rather than a hidden default.
+
+## 1.0 interface stability
+
+The 1.x public contract consists of the documented `rawclip` and `rawclipd`
+command forms, exit-status classes, configuration keys/defaults/ranges and
+selection semantics, signal behavior, and documented environment-variable
+roles. Existing public forms will not be repurposed within 1.x; new optional
+commands or configuration keys may be added.
+
+For automation, `rawclip show ID` writes the exact stored bytes and `rawclip
+health` prints exactly `ok\n` on a successful liveness probe. `rawclip list`
+uses one line per entry in the form `ID<TAB>MARKER SPACE PREVIEW`, where MARKER
+is `*` for pinned and `-` for unpinned; the preview is human-oriented and may
+change in presentation without changing the ID or marker fields. `rawclip status`
+is a human diagnostic surface: its key set, order, and formatting may grow or
+change. Human-readable stderr wording is likewise not an API.
+
+The local client/daemon IPC framing and version, runtime socket and lock
+basenames, rawmenu chooser presentation, and rawclip-private X11 atoms are
+implementation details. They may change within 1.x. `rawclip` and `rawclipd`
+must therefore come from the same installed version, and a long-lived daemon
+must be restarted when an upgrade changes private IPC. Standard X11 selection
+interoperability described in this document remains part of the public behavior.
 
 ## Exit status
 

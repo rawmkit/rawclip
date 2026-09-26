@@ -27,8 +27,9 @@ monitor X11 selections itself and does not own persistent history.
 	on standard error.
 
 *list*
-	Print stable numeric IDs, a pin marker (*\** pinned, *-* unpinned), and
-	single-line human previews.
+	Print one line per entry as _ID<TAB>MARKER SPACE PREVIEW_. MARKER is *\**
+	for pinned and *-* for unpinned. The ID and marker fields are stable 1.x
+	output; the preview is human-oriented.
 
 *show* _id_
 	Write the exact stored text bytes for one entry. IDs are nonzero ASCII
@@ -57,12 +58,13 @@ monitor X11 selections itself and does not own persistent history.
 	Control capture without destroying existing history.
 
 *status*
-	Print daemon/history policy, entry and pinned counts, plus live receive,
-	outgoing transfer, and current rawclip-owned selection state.
+	Print human-oriented daemon/history policy and live X11 state. Field names,
+	order, and formatting are diagnostic rather than a machine-readable ABI.
 
 *health*
-	Probe the authenticated daemon control path. Print *ok* and exit zero when the
-	daemon services the request from its main event loop.
+	Probe the authenticated daemon control path. Print exactly *ok* followed by a
+	newline and exit zero when the daemon services the request from its main event
+	loop.
 
 *reload*
 	Ask rawclipd to atomically reload its configuration.
@@ -88,12 +90,37 @@ Restart the running daemon after an upgrade which changes that protocol. A
 connection reset during the first exchange is diagnosed as a possibly stale or
 incompatible daemon rather than as an unexplained socket reset.
 
+
+# ENVIRONMENT
+
+*DISPLAY*
+	Select the X server whose rawclip control endpoint is addressed. Screen aliases
+	of the same server share one endpoint.
+
+*XDG_RUNTIME_DIR*
+	Required private runtime directory for client/daemon control state. It must be
+	absolute, owned by the current user, and not group/world writable.
+
+*XDG_CONFIG_HOME*, *HOME*
+	Select user configuration when *-c* is not supplied for *menu*.
+
+*PATH*
+	Used by *menu* when the configured menu command is not an absolute path.
+
+# INTERFACE STABILITY
+
+The documented command forms, exit-status classes, exact *show* payload and
+*health* success output, and the ID/pin-marker fields of *list* are public 1.x
+interfaces. *status*, human diagnostics, chooser presentation, runtime endpoint
+names, and the client/daemon IPC protocol are not machine-readable ABIs.
+
 # FILES
 
-_$XDG_RUNTIME_DIR/rawclip-DISPLAY.sock_
-	Private per-display control socket. The runtime directory must be absolute,
-	owned by the current user, and not group/world writable. On Linux the client
-	verifies the connected daemon UID with SO_PEERCRED.
+_$XDG_RUNTIME_DIR_
+	Contains rawclip private per-X-server control and singleton state. Basenames
+	are implementation-private. The directory must be absolute, owned by the
+	current user, and not group/world writable. On Linux the client verifies the
+	connected daemon UID with SO_PEERCRED.
 
 # SEE ALSO
 

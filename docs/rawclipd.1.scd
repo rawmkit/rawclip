@@ -19,7 +19,9 @@ policy before requesting text, stores bounded history in memory, including
 optional in-memory pin state, and serves selected entries as the CLIPBOARD
 owner. Optional policy can synchronize admitted
 PRIMARY and CLIPBOARD text in either direction. Direct and ICCCM INCR transfers
-are supported in both capture and replay directions.
+are supported in both capture and replay directions. As a selection owner,
+rawclipd supports TARGETS, MULTIPLE, and TIMESTAMP alongside supported text
+targets.
 
 The daemon remains in the foreground. Session startup and global keyboard
 bindings belong to the surrounding desktop/window-manager configuration. The
@@ -58,9 +60,10 @@ Application exclusion rules are secondary advisory policy based on X11 owner
 metadata. Selection synchronization runs only after those admission checks, so
 rejected offers are not mirrored to the opposite selection.
 
-The control socket requires an absolute user-owned non-group/world-writable
-XDG_RUNTIME_DIR, is mode 0600, and validates Linux peer credentials. The
-per-display singleton lock is normalized to mode 0600. Local client I/O is
+Private control and singleton state live under an absolute user-owned
+non-group/world-writable XDG_RUNTIME_DIR. Runtime basenames are implementation
+detail. The control socket is mode 0600 and validates Linux peer credentials. The
+per-X-server singleton lock is normalized to mode 0600. Local client I/O is
 bounded so partial or disconnected control exchanges cannot terminate or wedge
 the daemon indefinitely.
 
@@ -68,6 +71,28 @@ the daemon indefinitely.
 
 0 on normal shutdown or successful validation, 1 on runtime/configuration
 failure, and 2 on command-line misuse.
+
+
+# ENVIRONMENT
+
+*DISPLAY*
+	X server monitored by the daemon. X11 selections are server-wide; screen aliases
+	of the same server share one rawclip control endpoint.
+
+*XDG_RUNTIME_DIR*
+	Required private runtime directory for control and singleton state. It must be
+	absolute, owned by the current user, and not group/world writable.
+
+*XDG_CONFIG_HOME*, *HOME*
+	Select user configuration when no explicit *-c* path is supplied.
+
+# INTERFACE STABILITY
+
+The documented options, exit-status classes, signal behavior, and configuration
+semantics are public 1.x interfaces. Runtime endpoint names, IPC framing/version,
+and human diagnostic wording are private. Keep *rawclip*(1) and *rawclipd* from
+the same installation and restart the long-lived daemon after an IPC-changing
+upgrade.
 
 # SEE ALSO
 
