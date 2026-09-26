@@ -226,7 +226,11 @@ menu_command(const struct rawclip_config *cfg)
     struct rawclip_ipc_frame reply;
 
     if (collect_entries(&entries, &len) != 0) return -1;
-    if (len == 0U) { free_entries(entries, len); return 0; }
+    if (len == 0U) {
+        fprintf(stderr, "rawclip: history is empty\n");
+        free_entries(entries, len);
+        return 0;
+    }
     if (pipe(inpipe) != 0 || pipe(outpipe) != 0) goto fail;
     pid = fork();
     if (pid < 0) goto fail;

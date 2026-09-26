@@ -56,6 +56,9 @@ for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
     "$rawclip" status >/dev/null 2>&1 && break || sleep 0.05
 done
 "$rawclip" status | grep -q 'paused=0 entries=0'
+"$rawclip" -c "$state/rawclip.conf" menu >"$state/empty-menu.out" 2>"$state/empty-menu.err"
+[ ! -s "$state/empty-menu.out" ]
+grep -q '^rawclip: history is empty$' "$state/empty-menu.err"
 
 # Sensitive offers are rejected after TARGETS and before payload bytes.
 "$helper" offer 'secret-value' --secret >"$state/secret-owner.out" &
