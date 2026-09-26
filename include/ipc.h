@@ -33,5 +33,9 @@ int rawclip_ipc_send(int fd, uint16_t type, const void *data, uint32_t len);
 int rawclip_ipc_recv(int fd, struct rawclip_ipc_frame *frame);
 void rawclip_ipc_frame_destroy(struct rawclip_ipc_frame *frame);
 int rawclip_ipc_socket_path(char *buf, size_t size, const char *display);
+int rawclip_ipc_pack_entry(uint64_t id, uint64_t timestamp_ms, const char *text,
+                           size_t len, unsigned char **out, uint32_t *out_len);
+int rawclip_ipc_unpack_entry(const unsigned char *data, uint32_t len, uint64_t *id,
+                             uint64_t *timestamp_ms, const char **text, size_t *text_len);
 
 #endif

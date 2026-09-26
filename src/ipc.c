@@ -132,3 +132,61 @@ rawclip_ipc_socket_path(char *buf, size_t size, const char *display)
     }
     return 0;
 }
+
+
+static uint64_t
+host_to_be64(uint64_t v)
+{
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    return ((uint64_t)htonl((uint32_t)(v >> 32U))) |
+           ((uint64_t)htonl((uint32_t)(v & 0xffffffffU)) << 32U);
+#else
+    return v;
+#endif
+}
+
+static uint64_t
+be64_to_host(uint64_t v)
+{
+    return host_to_be64(v);
+}
+
+int
+rawclip_ipc_pack_entry(uint64_t id, uint64_t timestamp_ms, const char *text,
+                       size_t len, unsigned char **out, uint32_t *out_len)
+{
+    unsigned char *p;
+    uint64_t v;
+    if (text == NULL || out == NULL || out_len == NULL || len > UINT32_MAX - 16U) {
+        errno = EINVAL;
+        return -1;
+    }
+    p = malloc(len + 16U);
+    if (p == NULL) return -1;
+    v = host_to_be64(id);
+    memcpy(p, &v, 8U);
+    v = host_to_be64(timestamp_ms);
+    memcpy(p + 8U, &v, 8U);
+    memcpy(p + 16U, text, len);
+    *out = p;
+    *out_len = (uint32_t)(len + 16U);
+    return 0;
+}
+
+int
+rawclip_ipc_unpack_entry(const unsigned char *data, uint32_t len, uint64_t *id,
+                         uint64_t *timestamp_ms, const char **text, size_t *text_len)
+{
+    uint64_t v;
+    if (data == NULL || len < 16U || id == NULL || timestamp_ms == NULL || text == NULL || text_len == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    memcpy(&v, data, 8U);
+    *id = be64_to_host(v);
+    memcpy(&v, data + 8U, 8U);
+    *timestamp_ms = be64_to_host(v);
+    *text = (const char *)(data + 16U);
+    *text_len = (size_t)len - 16U;
+    return 0;
+}
