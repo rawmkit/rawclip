@@ -178,6 +178,55 @@ parse_rules(config_t *c, struct rawclip_config *cfg, char *err, size_t err_size)
     return 0;
 }
 
+static bool
+name_allowed(const char *name, const char *const *allowed, size_t n)
+{
+    size_t i;
+    for (i = 0U; i < n; i++) if (strcmp(name, allowed[i]) == 0) return true;
+    return false;
+}
+
+static int
+validate_group(config_setting_t *group, const char *section,
+               const char *const *allowed, size_t allowed_len,
+               char *err, size_t err_size)
+{
+    int i;
+    if (group == NULL) return 0;
+    if (config_setting_type(group) != CONFIG_TYPE_GROUP) {
+        set_error(err, err_size, "%s must be a group", section);
+        errno = EINVAL;
+        return -1;
+    }
+    for (i = 0; i < config_setting_length(group); i++) {
+        config_setting_t *field = config_setting_get_elem(group, i);
+        const char *name = field == NULL ? NULL : config_setting_name(field);
+        if (name == NULL || !name_allowed(name, allowed, allowed_len)) {
+            set_error(err, err_size, "%s contains unknown setting %s", section,
+                      name == NULL ? "<unnamed>" : name);
+            errno = EINVAL;
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static int
+validate_path_type(config_t *c, const char *path, int type1, int type2,
+                   char *err, size_t err_size)
+{
+    config_setting_t *s = config_lookup(c, path);
+    int type;
+    if (s == NULL) return 0;
+    type = config_setting_type(s);
+    if (type != type1 && type != type2) {
+        set_error(err, err_size, "%s has the wrong value type", path);
+        errno = EINVAL;
+        return -1;
+    }
+    return 0;
+}
+
 static int
 apply_config(config_t *c, struct rawclip_config *cfg, char *err, size_t err_size)
 {
@@ -200,10 +249,24 @@ apply_config(config_t *c, struct rawclip_config *cfg, char *err, size_t err_size
         errno = EINVAL;
         return -1;
     }
-    if (history != NULL && config_setting_type(history) != CONFIG_TYPE_GROUP) goto bad_group;
-    if (selection != NULL && config_setting_type(selection) != CONFIG_TYPE_GROUP) goto bad_group;
-    if (security != NULL && config_setting_type(security) != CONFIG_TYPE_GROUP) goto bad_group;
-    if (menu != NULL && config_setting_type(menu) != CONFIG_TYPE_GROUP) goto bad_group;
+    {
+        static const char *const history_keys[] = {"max_entries", "max_entry_bytes", "deduplicate"};
+        static const char *const selection_keys[] = {"clipboard", "primary"};
+        static const char *const security_keys[] = {"honor_password_manager_hint"};
+        static const char *const menu_keys[] = {"command", "prompt"};
+        if (validate_group(history, "history", history_keys, 3U, err, err_size) != 0 ||
+            validate_group(selection, "selection", selection_keys, 2U, err, err_size) != 0 ||
+            validate_group(security, "security", security_keys, 1U, err, err_size) != 0 ||
+            validate_group(menu, "menu", menu_keys, 2U, err, err_size) != 0) return -1;
+        if (validate_path_type(c, "history.max_entries", CONFIG_TYPE_INT, CONFIG_TYPE_INT64, err, err_size) != 0 ||
+            validate_path_type(c, "history.max_entry_bytes", CONFIG_TYPE_INT, CONFIG_TYPE_INT64, err, err_size) != 0 ||
+            validate_path_type(c, "history.deduplicate", CONFIG_TYPE_BOOL, CONFIG_TYPE_BOOL, err, err_size) != 0 ||
+            validate_path_type(c, "selection.clipboard", CONFIG_TYPE_BOOL, CONFIG_TYPE_BOOL, err, err_size) != 0 ||
+            validate_path_type(c, "selection.primary", CONFIG_TYPE_BOOL, CONFIG_TYPE_BOOL, err, err_size) != 0 ||
+            validate_path_type(c, "security.honor_password_manager_hint", CONFIG_TYPE_BOOL, CONFIG_TYPE_BOOL, err, err_size) != 0 ||
+            validate_path_type(c, "menu.command", CONFIG_TYPE_STRING, CONFIG_TYPE_STRING, err, err_size) != 0 ||
+            validate_path_type(c, "menu.prompt", CONFIG_TYPE_STRING, CONFIG_TYPE_STRING, err, err_size) != 0) return -1;
+    }
 
     if (read_size(c, "history.max_entries", &cfg->max_entries, 1U, 65536U, err, err_size) != 0) return -1;
     if (read_size(c, "history.max_entry_bytes", &cfg->max_entry_bytes, 1U, RAWCLIP_IPC_MAX_FRAME / 2U, err, err_size) != 0) return -1;
@@ -224,11 +287,6 @@ apply_config(config_t *c, struct rawclip_config *cfg, char *err, size_t err_size
         return -1;
     }
     return parse_rules(c, cfg, err, err_size);
-
-bad_group:
-    set_error(err, err_size, "configuration sections must be groups");
-    errno = EINVAL;
-    return -1;
 }
 
 static int
@@ -238,11 +296,11 @@ read_one(struct rawclip_config *cfg, const char *path, bool required,
     config_t c;
     int rc = 0;
     config_init(&c);
+    if (!required && access(path, F_OK) != 0 && errno == ENOENT) {
+        config_destroy(&c);
+        return 0;
+    }
     if (config_read_file(&c, path) == CONFIG_FALSE) {
-        if (!required && config_error_type(&c) == CONFIG_ERR_FILE_IO && errno == ENOENT) {
-            config_destroy(&c);
-            return 0;
-        }
         set_error(err, err_size, "%s:%d: %s", path, config_error_line(&c), config_error_text(&c));
         config_destroy(&c);
         errno = EINVAL;
