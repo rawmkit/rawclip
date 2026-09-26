@@ -38,7 +38,8 @@ At least one monitored selection must remain enabled.
 # SECURITY
 
 *security.honor_password_manager_hint* = boolean
-	Drop offers advertising x-kde-passwordManagerHint before text transfer.
+	Query x-kde-passwordManagerHint before text transfer. Drop an exact value
+	*secret* and fail closed if an advertised hint cannot be read safely.
 	Default: true.
 
 # MENU

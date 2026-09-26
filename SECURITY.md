@@ -10,7 +10,7 @@ confidential transport.
 
 The security objective is narrower:
 
-* do not persist clipboard history in 0.1.0;
+* do not persist clipboard history;
 * do not record offers explicitly marked sensitive;
 * let users exclude additional source applications before payload transfer;
 * bound every clipboard and IPC allocation;
@@ -21,8 +21,11 @@ The security objective is narrower:
 ## Sensitive clipboard offers
 
 rawclip first requests `TARGETS`. If the source advertises
-`x-kde-passwordManagerHint` and `honor_password_manager_hint` is enabled, the
-offer is dropped immediately. rawclip does not request the text payload.
+`x-kde-passwordManagerHint` and `honor_password_manager_hint` is enabled,
+rawclip requests that hint target before any text target. An exact 8-bit value
+`secret` drops the offer without requesting clipboard text. A readable
+non-secret value permits normal capture. If an advertised hint cannot be read
+or is malformed, rawclip fails closed and does not request the text payload.
 
 The target is a convention, not an authenticated security label. A malicious
 or unaware application can omit it. A clipboard manager cannot infer secrecy
@@ -34,10 +37,11 @@ windows, or deliberately forged.
 
 ## rawpass integration
 
-rawpass integration is intentionally not part of rawclip 0.1.0. The later
-integration should make the rawpass clipboard owner advertise
-`x-kde-passwordManagerHint` while serving secrets. rawclip already understands
-that convention, so no rawpass-specific process-name exception is required.
+rawpass 1.1.0 and later advertises `x-kde-passwordManagerHint` with the exact
+value `secret` while serving password or OTP material. With the default rawclip
+policy, that selection is therefore rejected before its secret text is
+requested. No rawpass-specific process-name or window-class exception is
+required.
 
 ## History memory
 
@@ -64,14 +68,15 @@ owner races are discarded rather than partially stored.
 Source windows may disappear during metadata queries. rawclip installs a
 non-fatal X error handler so asynchronous `BadWindow` races do not invoke
 Xlib's default process-terminating handler. A fatal X I/O failure still ends
-the process; reconnect/recovery is not attempted in 0.1.0.
+the process; reconnect/recovery is not attempted.
 
 ## Replay authority
 
 Selecting a history entry makes rawclipd the X11 `CLIPBOARD` owner. It serves
 `TARGETS`, `TIMESTAMP`, `UTF8_STRING`, and representable `STRING` requests.
 
-0.1.0 does not implement outgoing INCR. Captured items are therefore bounded by
+rawclip does not yet implement outgoing INCR. Captured items are therefore
+bounded by
 a conservative limit derived from the X server's maximum direct request size.
 Items which cannot later be served safely are not admitted.
 

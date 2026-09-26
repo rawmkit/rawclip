@@ -44,9 +44,11 @@ bindings belong to the surrounding desktop/window-manager configuration.
 
 # SECURITY
 
-Offers advertising *x-kde-passwordManagerHint* are rejected before text is
-requested when the default sensitive policy is enabled. Application exclusion
-rules are secondary advisory policy based on X11 owner metadata.
+Offers advertising *x-kde-passwordManagerHint* are queried before text when
+the default sensitive policy is enabled. The exact value *secret* is rejected
+without requesting clipboard text; an unreadable advertised hint fails closed.
+Application exclusion rules are secondary advisory policy based on X11 owner
+metadata.
 
 The control socket requires an absolute user-owned non-group/world-writable
 XDG_RUNTIME_DIR, is mode 0600, and validates Linux peer credentials.

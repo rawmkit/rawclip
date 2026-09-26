@@ -11,8 +11,7 @@ policy:
 * `rawmenu` owns interactive selection UI;
 * `rawm` should own any global key binding used to invoke `rawclip menu`.
 
-There are no daemon-owned global hotkeys and no clipboard persistence in
-0.1.0.
+There are no daemon-owned global hotkeys and no clipboard persistence.
 
 ## Security model
 
@@ -21,9 +20,10 @@ therefore requests `TARGETS` before clipboard text and can refuse a source
 without reading its text payload.
 
 By default, an offer advertising the de-facto Linux password-manager target
-`x-kde-passwordManagerHint` is treated as sensitive and excluded from history.
-This is intentionally fail-closed on target presence: rawclip does not need to
-fetch the hint or the secret bytes before deciding not to record the offer.
+`x-kde-passwordManagerHint` is queried before text transfer. An exact hint value
+of `secret` is excluded from history without requesting the clipboard text. A
+readable non-secret hint value does not suppress capture, while an advertised
+hint that cannot be retrieved or parsed safely fails closed before text.
 
 Application rules are secondary policy for software which does not advertise a
 sensitive target. Rules can match `WM_CLASS` instance/class, window title, and
