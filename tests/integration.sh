@@ -34,7 +34,7 @@ cat >"$state/rawclip.conf" <<EOF2
 history = { max_entries = 8; max_entry_bytes = 524288; deduplicate = true; };
 selection = { clipboard = true; primary = false; };
 security = { honor_password_manager_hint = true; };
-menu = { command = "$state/fake-menu"; prompt = "clipboard"; };
+menu = { command = "$state/fake-menu"; prompt = "clipboard"; preview_chars = 3; };
 exclude = ( { class = "ExcludedApp"; } );
 EOF2
 cat >"$state/fake-menu" <<'EOF2'
@@ -44,8 +44,19 @@ set -eu
 [ "$1" = "-M" ]
 [ "$2" = "select" ]
 [ "$3" = "-p" ]
-[ "$4" = "clipboard" ]
+case "$4" in
+    clipboard|"clipboard delete") ;;
+    *) exit 2 ;;
+esac
+case "${RAWCLIP_TEST_MENU_BEHAVIOR:-select}" in
+    cancel) exit 1 ;;
+    fail) exit 42 ;;
+    empty) cat >/dev/null; exit 0 ;;
+    select) ;;
+    *) exit 2 ;;
+esac
 IFS= read -r first || exit 1
+[ -z "${RAWCLIP_TEST_MENU_CAPTURE:-}" ] || printf '%s\n' "$first" >"$RAWCLIP_TEST_MENU_CAPTURE"
 printf '%s\n' "$first"
 EOF2
 chmod +x "$state/fake-menu"
@@ -56,6 +67,12 @@ for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
     "$rawclip" status >/dev/null 2>&1 && break || sleep 0.05
 done
 "$rawclip" status | grep -q 'paused=0 entries=0'
+[ "$("$rawclip" health)" = 'ok' ]
+if "$rawclipd" -c "$state/rawclip.conf" >"$state/second-daemon.out" 2>"$state/second-daemon.err"; then
+    echo 'second rawclipd instance unexpectedly started' >&2
+    exit 1
+fi
+[ "$("$rawclip" health)" = 'ok' ]
 "$rawclip" -c "$state/rawclip.conf" menu >"$state/empty-menu.out" 2>"$state/empty-menu.err"
 [ ! -s "$state/empty-menu.out" ]
 grep -q '^rawclip: history is empty$' "$state/empty-menu.err"
@@ -115,9 +132,55 @@ kill "$owner_pid"
 wait "$owner_pid"
 owner_pid=
 
-"$rawclip" -c "$state/rawclip.conf" menu
-[ "$("$helper" paste)" = 'alpha-value' ]
 "$rawclip" show "$id" | grep -q '^alpha-value$'
+RAWCLIP_TEST_MENU_BEHAVIOR=cancel "$rawclip" -c "$state/rawclip.conf" menu
+if RAWCLIP_TEST_MENU_BEHAVIOR=fail "$rawclip" -c "$state/rawclip.conf" menu >"$state/menu-fail.out" 2>"$state/menu-fail.err"; then
+    echo 'failing menu frontend was reported as success' >&2
+    exit 1
+fi
+grep -q '^rawclip: menu: Input/output error$' "$state/menu-fail.err"
+if RAWCLIP_TEST_MENU_BEHAVIOR=empty "$rawclip" -c "$state/rawclip.conf" menu >"$state/menu-empty.out" 2>"$state/menu-empty.err"; then
+    echo 'empty successful menu output was accepted' >&2
+    exit 1
+fi
+grep -q '^rawclip: menu: Protocol error$' "$state/menu-empty.err"
+RAWCLIP_TEST_MENU_CAPTURE="$state/menu-delete.input" "$rawclip" -c "$state/rawclip.conf" menu delete
+[ -z "$("$rawclip" list)" ]
+[ "$(cat "$state/menu-delete.input")" = "$(printf '%s\t%s' "$id" 'alp…')" ]
+
+"$helper" offer 'alpha-value' >"$state/alpha-reowner.out" &
+owner_pid=$!
+sleep 0.15
+line=$("$rawclip" list)
+id=${line%%	*}
+kill "$owner_pid"
+wait "$owner_pid"
+owner_pid=
+RAWCLIP_TEST_MENU_CAPTURE="$state/menu-select.input" "$rawclip" -c "$state/rawclip.conf" menu
+[ "$("$helper" paste)" = 'alpha-value' ]
+[ "$(cat "$state/menu-select.input")" = "$(printf '%s\t%s' "$id" 'alp…')" ]
+
+"$rawclip" clear
+"$helper" offer 'éééé' >"$state/utf8-owner.out" &
+owner_pid=$!
+sleep 0.15
+line=$("$rawclip" list)
+id=${line%%	*}
+kill "$owner_pid"
+wait "$owner_pid"
+owner_pid=
+RAWCLIP_TEST_MENU_CAPTURE="$state/menu-utf8.input" "$rawclip" -c "$state/rawclip.conf" menu
+[ "$(cat "$state/menu-utf8.input")" = "$(printf '%s\t%s' "$id" 'ééé…')" ]
+"$rawclip" clear
+
+"$helper" offer 'alpha-value' >"$state/alpha-final-owner.out" &
+owner_pid=$!
+sleep 0.15
+line=$("$rawclip" list)
+id=${line%%	*}
+kill "$owner_pid"
+wait "$owner_pid"
+owner_pid=
 
 "$rawclip" pause
 "$rawclip" status | grep -q 'paused=1'
@@ -129,9 +192,42 @@ kill "$owner_pid"
 wait "$owner_pid"
 owner_pid=
 "$rawclip" resume
+[ "$("$rawclip" health)" = 'ok' ]
+
+cp "$state/rawclip.conf" "$state/rawclip.conf.good"
+printf '%s\n' 'bogus = true;' >"$state/rawclip.conf"
+if "$rawclip" reload >/dev/null 2>&1; then
+    echo 'invalid configuration reload succeeded' >&2
+    exit 1
+fi
+[ "$("$rawclip" health)" = 'ok' ]
+mv "$state/rawclip.conf.good" "$state/rawclip.conf"
+"$rawclip" reload
 
 "$rawclip" delete "$id"
 [ -z "$("$rawclip" list)" ]
+
+i=0
+while [ "$i" -lt 25 ]; do
+    "$helper" offer "churn-$i" >"$state/churn-$i.out" &
+    churn_pid=$!
+    sleep 0.01
+    kill "$churn_pid" 2>/dev/null || true
+    wait "$churn_pid" 2>/dev/null || true
+    i=$((i + 1))
+done
+[ "$("$rawclip" health)" = 'ok' ]
+"$helper" offer 'churn-final' >"$state/churn-final.out" &
+owner_pid=$!
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    "$rawclip" list | grep -q 'churn-final' && break || sleep 0.05
+done
+"$rawclip" list | grep -q 'churn-final'
+kill "$owner_pid"
+wait "$owner_pid"
+owner_pid=
+"$rawclip" clear
+"$rawclip" status | grep -q 'receive_pending=0'
 
 # Large clipboard values cross both sides of the ICCCM INCR boundary.
 large_bytes=400000

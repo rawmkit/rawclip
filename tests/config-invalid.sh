@@ -28,5 +28,8 @@ check_bad bidirectional_without_primary 'selection = { clipboard = true; primary
 check_bad empty_rule 'exclude = ( {} );'
 check_bad unknown_rule 'exclude = ( { process = "foo"; } );'
 check_bad empty_menu 'menu = { command = ""; };'
+check_bad preview_too_small 'menu = { preview_chars = 0; };'
+check_bad preview_too_large 'menu = { preview_chars = 5000; };'
+check_bad preview_wrong_type 'menu = { preview_chars = "many"; };'
 
 echo 'rawclip config rejection tests: ok'

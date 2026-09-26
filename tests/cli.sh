@@ -18,6 +18,12 @@ if "$rawclip" nonsense >/dev/null 2>&1; then
 else
     [ "$?" -eq 2 ]
 fi
+if "$rawclip" menu bogus >/dev/null 2>&1; then
+    echo 'invalid menu action succeeded' >&2
+    exit 1
+else
+    [ "$?" -eq 2 ]
+fi
 if "$rawclip" show >/dev/null 2>&1; then
     echo 'missing show id succeeded' >&2
     exit 1
