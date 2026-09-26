@@ -8,6 +8,12 @@
 int
 main(void)
 {
+    {
+        unsigned char secret[] = {1U, 2U, 3U, 4U};
+        size_t i;
+        rawclip_memzero(secret, sizeof(secret));
+        for (i = 0U; i < sizeof(secret); i++) assert(secret[i] == 0U);
+    }
     static const unsigned char good[] = "hello \xe2\x82\xac";
     static const unsigned char bad_overlong[] = {0xc0, 0x80};
     static const unsigned char bad_split[] = {0xe2, 0x82};

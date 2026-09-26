@@ -234,7 +234,10 @@ fail:
     {
         size_t i;
         int saved = errno;
-        for (i = 0U; i < len; i++) free(entries[i].text);
+        for (i = 0U; i < len; i++) {
+            rawclip_memzero(entries[i].text, entries[i].len);
+            free(entries[i].text);
+        }
         free(entries);
         close(fd);
         errno = saved;
@@ -246,7 +249,10 @@ static void
 free_entries(struct menu_entry *entries, size_t len)
 {
     size_t i;
-    for (i = 0U; i < len; i++) free(entries[i].text);
+    for (i = 0U; i < len; i++) {
+        rawclip_memzero(entries[i].text, entries[i].len);
+        free(entries[i].text);
+    }
     free(entries);
 }
 

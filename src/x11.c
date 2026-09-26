@@ -297,7 +297,7 @@ static void
 owned_selection_clear(struct owned_selection *owned)
 {
     if (owned->text != NULL) {
-        memset(owned->text, 0, owned->len);
+        rawclip_memzero(owned->text, owned->len);
         free(owned->text);
     }
     memset(owned, 0, sizeof(*owned));
@@ -321,7 +321,7 @@ send_transfer_destroy(struct send_transfer *t)
 {
     if (t == NULL) return;
     if (t->data != NULL) {
-        memset(t->data, 0, t->len);
+        rawclip_memzero(t->data, t->len);
         free(t->data);
     }
     free(t);
@@ -651,6 +651,7 @@ selection_notify(struct rawclip_x11 *x, const XSelectionEvent *ev)
                 } else {
                     reset_receive(x);
                 }
+                if (utf8 != NULL) rawclip_memzero(utf8, utf8_len);
                 free(utf8);
             } else if (actual == x->utf8 && rawclip_utf8_valid(data, (size_t)nitems) &&
                        (size_t)nitems <= x->cfg->max_entry_bytes &&
@@ -705,6 +706,7 @@ property_notify(struct rawclip_x11 *x, const XPropertyEvent *ev)
             append_receive(x, (const unsigned char *)utf8, utf8_len) != 0) {
             reset_receive(x);
         }
+        if (utf8 != NULL) rawclip_memzero(utf8, utf8_len);
         free(utf8);
     } else if (append_receive(x, data, (size_t)nitems) != 0) {
         reset_receive(x);
@@ -749,7 +751,7 @@ own_selection(struct rawclip_x11 *x, Atom selection, const char *text, size_t le
     XSetSelectionOwner(x->dpy, selection, x->win, t);
     XSync(x->dpy, False);
     if (XGetSelectionOwner(x->dpy, selection) != x->win) {
-        memset(copy, 0, len);
+        rawclip_memzero(copy, len);
         free(copy);
         errno = EBUSY;
         return -1;
@@ -805,6 +807,7 @@ selection_request(struct rawclip_x11 *x, const XSelectionRequestEvent *req)
                     ok = serve_selection_data(x, req->selection, req->requestor,
                                               property, x->string, latin1,
                                               latin1_len);
+                    rawclip_memzero(latin1, latin1_len);
                     free(latin1);
                 }
             }

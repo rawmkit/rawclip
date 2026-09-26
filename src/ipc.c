@@ -148,6 +148,7 @@ rawclip_ipc_frame_destroy(struct rawclip_ipc_frame *frame)
     if (frame == NULL) {
         return;
     }
+    if (frame->data != NULL) rawclip_memzero(frame->data, frame->len);
     free(frame->data);
     memset(frame, 0, sizeof(*frame));
 }

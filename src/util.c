@@ -84,6 +84,14 @@ rawclip_xstrndup(const char *s, size_t n)
     return p;
 }
 
+void
+rawclip_memzero(void *buf, size_t len)
+{
+    volatile unsigned char *p = buf;
+
+    while (len-- > 0U) *p++ = 0U;
+}
+
 int
 rawclip_write_all(int fd, const void *buf, size_t len)
 {
@@ -194,9 +202,10 @@ rawclip_utf8_to_latin1(const char *src, size_t len, unsigned char **out, size_t 
         else if ((c & 0xe0U) == 0xc0U) {
             unsigned char d = (unsigned char)src[i++];
             uint32_t cp = ((uint32_t)(c & 0x1fU) << 6U) | (uint32_t)(d & 0x3fU);
-            if (cp > 0xffU) { free(p); errno = EILSEQ; return -1; }
+            if (cp > 0xffU) { rawclip_memzero(p, len + 1U); free(p); errno = EILSEQ; return -1; }
             p[n++] = (unsigned char)cp;
         } else {
+            rawclip_memzero(p, len + 1U);
             free(p);
             errno = EILSEQ;
             return -1;

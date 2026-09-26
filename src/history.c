@@ -13,7 +13,7 @@ entry_destroy(struct rawclip_entry *e)
         return;
     }
     if (e->text != NULL) {
-        memset(e->text, 0, e->len);
+        rawclip_memzero(e->text, e->len);
         free(e->text);
     }
     memset(e, 0, sizeof(*e));

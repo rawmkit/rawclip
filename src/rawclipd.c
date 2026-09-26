@@ -206,10 +206,12 @@ handle_client(struct daemon_state *st, int fd)
                 return -1;
             }
             if (rawclip_ipc_send(fd, RAWCLIP_IPC_DATA, payload, payload_len) != 0) {
+                rawclip_memzero(payload, payload_len);
                 free(payload);
                 rawclip_ipc_frame_destroy(&frame);
                 return -1;
             }
+            rawclip_memzero(payload, payload_len);
             free(payload);
         }
         rawclip_ipc_send(fd, RAWCLIP_IPC_OK, NULL, 0U);
