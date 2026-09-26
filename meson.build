@@ -101,3 +101,19 @@ test(
   ),
   args: [meson.current_source_dir() / 'config/rawclip.conf'],
 )
+
+x11_helper = executable(
+  'x11-helper',
+  'tests/x11-helper.c',
+  dependencies: [x11_dep],
+)
+
+xvfb = find_program('Xvfb', required: false)
+if xvfb.found()
+  test(
+    'integration',
+    find_program('tests/integration.sh'),
+    args: [rawclipd, rawclip, x11_helper],
+    timeout: 30,
+  )
+endif
