@@ -23,5 +23,14 @@ main(int argc, char **argv)
     assert(strcmp(cfg.menu_command, "rawmenu") == 0);
     assert(cfg.menu_preview_chars == 200U);
     rawclip_config_destroy(&cfg);
+
+    memset(&cfg, 0, sizeof(cfg));
+    assert(rawclip_config_load(&cfg, "/definitely/not/a/rawclip/config",
+                               err, sizeof(err)) != 0);
+    assert(cfg.menu_command == NULL);
+    assert(cfg.menu_prompt == NULL);
+    assert(cfg.rules == NULL);
+    assert(cfg.rules_len == 0U);
+    rawclip_config_destroy(&cfg);
     return 0;
 }

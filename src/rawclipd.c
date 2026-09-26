@@ -51,7 +51,10 @@ signal_handler(int sig)
 static void
 usage(FILE *f)
 {
-    fprintf(f, "usage: rawclipd [-c path] [-C] [-v]\n");
+    fprintf(f,
+            "usage: rawclipd [-c path]\n"
+            "       rawclipd -C -c path\n"
+            "       rawclipd -v\n");
 }
 
 static int

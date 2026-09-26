@@ -373,39 +373,53 @@ rawclip_config_load(struct rawclip_config *cfg, const char *explicit_path,
     const char *xdg;
     const char *home;
     char path[PATH_MAX];
+    int rc = -1;
 
     rawclip_config_defaults(cfg);
     if (cfg->menu_command == NULL || cfg->menu_prompt == NULL) {
-        return -1;
+        goto fail;
     }
     if (explicit_path != NULL) {
-        return read_one(cfg, explicit_path, true, err, err_size);
+        rc = read_one(cfg, explicit_path, true, err, err_size);
+        if (rc != 0) goto fail;
+        return 0;
     }
     if (snprintf(path, sizeof(path), "%s/rawclip/rawclip.conf",
                  RAWCLIP_SYSCONFDIR) >= (int)sizeof(path)) {
         errno = ENAMETOOLONG;
-        return -1;
+        goto fail;
     }
     if (read_one(cfg, path, false, err, err_size) != 0) {
-        return -1;
+        goto fail;
     }
     xdg = getenv("XDG_CONFIG_HOME");
     home = getenv("HOME");
     if (xdg != NULL && xdg[0] == '/') {
         if (snprintf(path, sizeof(path), "%s/rawclip/rawclip.conf", xdg) >= (int)sizeof(path)) {
             errno = ENAMETOOLONG;
-            return -1;
+            goto fail;
         }
-        return read_one(cfg, path, false, err, err_size);
+        rc = read_one(cfg, path, false, err, err_size);
+        if (rc != 0) goto fail;
+        return 0;
     }
     if (home != NULL && home[0] == '/') {
         if (snprintf(path, sizeof(path), "%s/.config/rawclip/rawclip.conf", home) >= (int)sizeof(path)) {
             errno = ENAMETOOLONG;
-            return -1;
+            goto fail;
         }
-        return read_one(cfg, path, false, err, err_size);
+        rc = read_one(cfg, path, false, err, err_size);
+        if (rc != 0) goto fail;
     }
     return 0;
+
+fail:
+    {
+        int saved = errno;
+        rawclip_config_destroy(cfg);
+        errno = saved;
+    }
+    return -1;
 }
 
 int
