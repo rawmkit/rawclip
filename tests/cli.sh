@@ -38,6 +38,12 @@ if "$rawclipd" -c "$config" -v >/dev/null 2>&1; then
 else
     [ "$?" -eq 2 ]
 fi
+if "$rawclip" -c "$config" status >/dev/null 2>&1; then
+    echo 'non-menu command accepted ignored local menu policy' >&2
+    exit 1
+else
+    [ "$?" -eq 2 ]
+fi
 
 if "$rawclip" nonsense >/dev/null 2>&1; then
     echo 'unknown command succeeded' >&2

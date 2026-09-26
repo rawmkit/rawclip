@@ -379,6 +379,10 @@ main(int argc, char **argv)
     cmd = argv[optind++];
     if (optind < argc) arg = argv[optind++];
     if (optind != argc) { usage(stderr); return 2; }
+    if (config_path != NULL && strcmp(cmd, "menu") != 0) {
+        usage(stderr);
+        return 2;
+    }
 
     if (strcmp(cmd, "menu") == 0) {
         enum menu_action action = MENU_SELECT;
