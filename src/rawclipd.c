@@ -189,13 +189,18 @@ handle_client(struct daemon_state *st, int fd)
     uint64_t id;
     const struct rawclip_entry *e;
     size_t i;
-    char status[128];
+    char status[256];
 
     if (peer_authorized(fd) != 0) return -1;
     if (rawclip_ipc_recv(fd, &frame) != 0) return -1;
     switch (frame.type) {
     case RAWCLIP_IPC_STATUS:
-        snprintf(status, sizeof(status), "paused=%d entries=%zu\n", st->paused ? 1 : 0, st->history.len);
+        snprintf(status, sizeof(status),
+                 "paused=%d entries=%zu clipboard=%d primary=%d synchronize=%s\n",
+                 st->paused ? 1 : 0, st->history.len,
+                 st->cfg.monitor_clipboard ? 1 : 0,
+                 st->cfg.monitor_primary ? 1 : 0,
+                 rawclip_sync_mode_name(st->cfg.sync_mode));
         rawclip_ipc_send(fd, RAWCLIP_IPC_DATA, status, (uint32_t)strlen(status));
         break;
     case RAWCLIP_IPC_LIST:
