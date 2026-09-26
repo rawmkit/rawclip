@@ -113,7 +113,9 @@ rawmenu -M select -p clipboard
 
 and replays the selected ID. No shell evaluates the menu command.
 
-Cancellation is not an error and leaves the current clipboard untouched.
+Cancellation is not an error and leaves the current clipboard untouched. An empty
+history is also a successful no-op; `rawclip menu` reports `history is empty` on
+stderr instead of silently looking like a failed selector launch.
 
 ## Window-manager integration
 

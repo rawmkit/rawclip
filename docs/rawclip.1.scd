@@ -20,7 +20,8 @@ monitor X11 selections itself and does not own persistent history.
 *menu*
 	Present current history through the configured rawmenu selector and replay
 	the selected entry as CLIPBOARD. The configured executable is invoked with
-	*-M select -p* _prompt_.
+	*-M select -p* _prompt_. Empty history is a successful no-op and is reported
+	on standard error.
 
 *list*
 	Print stable numeric IDs and single-line human previews.
