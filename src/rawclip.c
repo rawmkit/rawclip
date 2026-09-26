@@ -252,20 +252,36 @@ menu_command(const struct rawclip_config *cfg, enum menu_action action)
     uint64_t id;
     char idbuf[32];
     struct rawclip_ipc_frame reply;
-    char action_prompt[256];
+    char *action_prompt = NULL;
     const char *prompt = cfg->menu_prompt;
 
     if (action == MENU_DELETE || action == MENU_TOGGLE_PIN) {
         const char *suffix = action == MENU_DELETE ? "delete" : "pin";
-        int pn = snprintf(action_prompt, sizeof(action_prompt), "%s %s", cfg->menu_prompt, suffix);
-        if (pn < 0 || (size_t)pn >= sizeof(action_prompt)) { errno = ENAMETOOLONG; return -1; }
+        size_t prompt_len = strlen(cfg->menu_prompt);
+        size_t suffix_len = strlen(suffix);
+        size_t total;
+
+        if (prompt_len > SIZE_MAX - suffix_len - 2U) {
+            errno = EOVERFLOW;
+            return -1;
+        }
+        total = prompt_len + 1U + suffix_len + 1U;
+        action_prompt = malloc(total);
+        if (action_prompt == NULL) return -1;
+        (void)snprintf(action_prompt, total, "%s %s", cfg->menu_prompt, suffix);
         prompt = action_prompt;
     }
 
-    if (collect_entries(&entries, &len) != 0) return -1;
+    if (collect_entries(&entries, &len) != 0) {
+        int saved = errno;
+        free(action_prompt);
+        errno = saved;
+        return -1;
+    }
     if (len == 0U) {
         fprintf(stderr, "rawclip: history is empty\n");
         free_entries(entries, len);
+        free(action_prompt);
         return 0;
     }
     if (pipe(inpipe) != 0 || pipe(outpipe) != 0) goto fail;
@@ -298,6 +314,7 @@ menu_command(const struct rawclip_config *cfg, enum menu_action action)
     if (waitpid(pid, &status, 0) < 0) goto fail;
     if (WIFEXITED(status) && WEXITSTATUS(status) == 1) {
         free_entries(entries, len);
+        free(action_prompt);
         return 0;
     }
     if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
@@ -322,6 +339,7 @@ menu_command(const struct rawclip_config *cfg, enum menu_action action)
     status = print_reply(&reply, false);
     rawclip_ipc_frame_destroy(&reply);
     free_entries(entries, len);
+    free(action_prompt);
     return status;
 
 parent_fail:
@@ -336,6 +354,7 @@ fail:
     if (outpipe[0] >= 0) close(outpipe[0]);
     if (outpipe[1] >= 0) close(outpipe[1]);
     free_entries(entries, len);
+    free(action_prompt);
     return -1;
 }
 

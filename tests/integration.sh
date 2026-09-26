@@ -59,10 +59,14 @@ set -eu
 [ "$1" = "-M" ]
 [ "$2" = "select" ]
 [ "$3" = "-p" ]
-case "$4" in
-    clipboard|"clipboard delete"|"clipboard pin") ;;
-    *) exit 2 ;;
-esac
+if [ -n "${RAWCLIP_TEST_EXPECT_PROMPT:-}" ]; then
+    [ "$4" = "$RAWCLIP_TEST_EXPECT_PROMPT" ]
+else
+    case "$4" in
+        clipboard|"clipboard delete"|"clipboard pin") ;;
+        *) exit 2 ;;
+    esac
+fi
 case "${RAWCLIP_TEST_MENU_BEHAVIOR:-select}" in
     cancel) exit 1 ;;
     fail) exit 42 ;;
@@ -217,6 +221,14 @@ if RAWCLIP_TEST_MENU_BEHAVIOR=empty "$rawclip" -c "$state/rawclip.conf" menu >"$
     exit 1
 fi
 grep -q '^rawclip: menu: Protocol error$' "$state/menu-empty.err"
+long_prompt=$(awk 'BEGIN { for (i = 0; i < 300; i++) printf "p" }')
+cat >"$state/rawclip-long-menu.conf" <<EOF2
+menu = { command = "$state/fake-menu"; prompt = "$long_prompt"; preview_chars = 3; };
+EOF2
+RAWCLIP_TEST_EXPECT_PROMPT="$long_prompt pin" \
+RAWCLIP_TEST_MENU_CAPTURE="$state/menu-long-prompt.input" \
+    "$rawclip" -c "$state/rawclip-long-menu.conf" menu toggle-pin
+"$rawclip" unpin "$id"
 RAWCLIP_TEST_MENU_CAPTURE="$state/menu-delete.input" "$rawclip" -c "$state/rawclip.conf" menu delete
 [ -z "$("$rawclip" list)" ]
 [ "$(cat "$state/menu-delete.input")" = "$(printf '%s\t%s' "$id" '- alp…')" ]
