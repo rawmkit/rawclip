@@ -14,6 +14,7 @@ struct rawclip_entry {
     uint64_t timestamp_ms;
     char *text;
     size_t len;
+    bool pinned;
 };
 
 struct rawclip_history {
@@ -34,8 +35,11 @@ int rawclip_history_add(struct rawclip_history *h, const char *text, size_t len,
 const struct rawclip_entry *rawclip_history_get(const struct rawclip_history *h,
                                                 uint64_t id);
 int rawclip_history_delete(struct rawclip_history *h, uint64_t id);
+int rawclip_history_set_pinned(struct rawclip_history *h, uint64_t id, bool pinned);
+size_t rawclip_history_pinned_count(const struct rawclip_history *h);
 void rawclip_history_clear(struct rawclip_history *h);
-void rawclip_history_reconfigure(struct rawclip_history *h, size_t max_entries,
-                                 size_t max_entry_bytes, bool deduplicate);
+void rawclip_history_clear_unpinned(struct rawclip_history *h);
+int rawclip_history_reconfigure(struct rawclip_history *h, size_t max_entries,
+                                size_t max_entry_bytes, bool deduplicate);
 
 #endif

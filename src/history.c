@@ -68,13 +68,30 @@ reserve_one(struct rawclip_history *h)
 }
 
 static void
-evict_oldest(struct rawclip_history *h)
+delete_index(struct rawclip_history *h, size_t i)
 {
-    if (h->len == 0U) {
-        return;
+    entry_destroy(&h->entries[i]);
+    if (i + 1U < h->len) {
+        memmove(&h->entries[i], &h->entries[i + 1U],
+                (h->len - i - 1U) * sizeof(h->entries[0]));
     }
-    entry_destroy(&h->entries[h->len - 1U]);
     h->len--;
+}
+
+static int
+evict_oldest_unpinned(struct rawclip_history *h)
+{
+    size_t i = h->len;
+
+    while (i > 0U) {
+        i--;
+        if (!h->entries[i].pinned) {
+            delete_index(h, i);
+            return 0;
+        }
+    }
+    errno = ENOSPC;
+    return -1;
 }
 
 static ssize_t
@@ -117,7 +134,9 @@ rawclip_history_add(struct rawclip_history *h, const char *text, size_t len,
     }
 
     while (h->len >= h->max_entries) {
-        evict_oldest(h);
+        if (evict_oldest_unpinned(h) != 0) {
+            return -1;
+        }
     }
     if (reserve_one(h) != 0) {
         return -1;
@@ -164,17 +183,36 @@ rawclip_history_delete(struct rawclip_history *h, uint64_t id)
     size_t i;
     for (i = 0; i < h->len; i++) {
         if (h->entries[i].id == id) {
-            entry_destroy(&h->entries[i]);
-            if (i + 1U < h->len) {
-                memmove(&h->entries[i], &h->entries[i + 1U],
-                        (h->len - i - 1U) * sizeof(h->entries[0]));
-            }
-            h->len--;
+            delete_index(h, i);
             return 0;
         }
     }
     errno = ENOENT;
     return -1;
+}
+
+int
+rawclip_history_set_pinned(struct rawclip_history *h, uint64_t id, bool pinned)
+{
+    size_t i;
+    for (i = 0; i < h->len; i++) {
+        if (h->entries[i].id == id) {
+            h->entries[i].pinned = pinned;
+            return 0;
+        }
+    }
+    errno = ENOENT;
+    return -1;
+}
+
+size_t
+rawclip_history_pinned_count(const struct rawclip_history *h)
+{
+    size_t i, count = 0U;
+    for (i = 0U; i < h->len; i++) {
+        if (h->entries[i].pinned) count++;
+    }
+    return count;
 }
 
 void
@@ -188,26 +226,55 @@ rawclip_history_clear(struct rawclip_history *h)
 }
 
 void
-rawclip_history_reconfigure(struct rawclip_history *h, size_t max_entries,
-                            size_t max_entry_bytes, bool deduplicate)
+rawclip_history_clear_unpinned(struct rawclip_history *h)
 {
     size_t i = 0U;
-    h->max_entries = max_entries;
-    h->max_entry_bytes = max_entry_bytes;
-    h->deduplicate = deduplicate;
     while (i < h->len) {
-        if (h->entries[i].len > max_entry_bytes) {
-            entry_destroy(&h->entries[i]);
-            if (i + 1U < h->len) {
-                memmove(&h->entries[i], &h->entries[i + 1U],
-                        (h->len - i - 1U) * sizeof(h->entries[0]));
-            }
-            h->len--;
+        if (!h->entries[i].pinned) {
+            delete_index(h, i);
         } else {
             i++;
         }
     }
-    while (h->len > h->max_entries) {
-        evict_oldest(h);
+}
+
+int
+rawclip_history_reconfigure(struct rawclip_history *h, size_t max_entries,
+                            size_t max_entry_bytes, bool deduplicate)
+{
+    size_t i;
+
+    if (h == NULL || max_entries == 0U || max_entry_bytes == 0U) {
+        errno = EINVAL;
+        return -1;
     }
+    if (rawclip_history_pinned_count(h) > max_entries) {
+        errno = ENOSPC;
+        return -1;
+    }
+    for (i = 0U; i < h->len; i++) {
+        if (h->entries[i].pinned && h->entries[i].len > max_entry_bytes) {
+            errno = EMSGSIZE;
+            return -1;
+        }
+    }
+
+    i = 0U;
+    while (i < h->len) {
+        if (!h->entries[i].pinned && h->entries[i].len > max_entry_bytes) {
+            delete_index(h, i);
+        } else {
+            i++;
+        }
+    }
+    while (h->len > max_entries) {
+        if (evict_oldest_unpinned(h) != 0) {
+            return -1;
+        }
+    }
+
+    h->max_entries = max_entries;
+    h->max_entry_bytes = max_entry_bytes;
+    h->deduplicate = deduplicate;
+    return 0;
 }
