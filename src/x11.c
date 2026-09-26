@@ -523,14 +523,14 @@ finish_text(struct rawclip_x11 *x)
         rc = x->capture(x->userdata, (const char *)x->buf, x->buf_len,
                         rawclip_now_ms());
         destination = sync_destination(x, source);
-        if (rc == 0 && destination != None) {
+        if (rc == RAWCLIP_CAPTURE_ADMITTED && destination != None) {
             /* Selection ownership is inherently racy. History admission remains
              * authoritative even if another client wins the destination race. */
             (void)own_selection(x, destination, (const char *)x->buf, x->buf_len, true);
         }
     }
     reset_receive(x);
-    return rc;
+    return rc == RAWCLIP_CAPTURE_FATAL ? -1 : 0;
 }
 
 static bool

@@ -58,7 +58,11 @@ static int
 capture_text(void *userdata, const char *text, size_t len, uint64_t timestamp_ms)
 {
     struct daemon_state *st = userdata;
-    return rawclip_history_add(&st->history, text, len, timestamp_ms, NULL);
+    if (rawclip_history_add(&st->history, text, len, timestamp_ms, NULL) == 0)
+        return RAWCLIP_CAPTURE_ADMITTED;
+    if (errno == ENOSPC)
+        return RAWCLIP_CAPTURE_DROPPED;
+    return RAWCLIP_CAPTURE_FATAL;
 }
 
 static int
@@ -178,7 +182,13 @@ reload_config(struct daemon_state *st)
         rawclip_config_destroy(&next);
         return -1;
     }
-    rawclip_history_reconfigure(&st->history, next.max_entries, next.max_entry_bytes, next.deduplicate);
+    if (rawclip_history_reconfigure(&st->history, next.max_entries,
+                                    next.max_entry_bytes, next.deduplicate) != 0) {
+        fprintf(stderr, "rawclipd: config reload failed: pinned history conflicts with new limits: %s\n",
+                strerror(errno));
+        rawclip_config_destroy(&next);
+        return -1;
+    }
     rawclip_config_destroy(&st->cfg);
     st->cfg = next;
     rawclip_x11_set_config(st->x11, &st->cfg);
@@ -201,9 +211,10 @@ handle_client(struct daemon_state *st, int fd)
     case RAWCLIP_IPC_STATUS:
         rawclip_x11_get_status(st->x11, &xstatus);
         snprintf(status, sizeof(status),
-                 "paused=%d entries=%zu clipboard=%d primary=%d synchronize=%s "
+                 "paused=%d entries=%zu pinned=%zu clipboard=%d primary=%d synchronize=%s "
                  "receive_pending=%d outgoing_transfers=%zu own_clipboard=%d own_primary=%d\n",
                  st->paused ? 1 : 0, st->history.len,
+                 rawclip_history_pinned_count(&st->history),
                  st->cfg.monitor_clipboard ? 1 : 0,
                  st->cfg.monitor_primary ? 1 : 0,
                  rawclip_sync_mode_name(st->cfg.sync_mode),
@@ -219,7 +230,9 @@ handle_client(struct daemon_state *st, int fd)
             unsigned char *payload = NULL;
             uint32_t payload_len = 0U;
             e = &st->history.entries[i];
-            if (rawclip_ipc_pack_entry(e->id, e->timestamp_ms, e->text, e->len, &payload, &payload_len) != 0) {
+            if (rawclip_ipc_pack_entry(e->id, e->timestamp_ms,
+                                       e->pinned ? RAWCLIP_ENTRY_FLAG_PINNED : 0U,
+                                       e->text, e->len, &payload, &payload_len) != 0) {
                 rawclip_ipc_frame_destroy(&frame);
                 return -1;
             }
@@ -244,6 +257,23 @@ handle_client(struct daemon_state *st, int fd)
     case RAWCLIP_IPC_DELETE:
         if (parse_id_frame(&frame, &id) != 0 || rawclip_history_delete(&st->history, id) != 0) send_error(fd, "entry not found");
         else rawclip_ipc_send(fd, RAWCLIP_IPC_OK, NULL, 0U);
+        break;
+    case RAWCLIP_IPC_PIN:
+        if (parse_id_frame(&frame, &id) != 0 || rawclip_history_set_pinned(&st->history, id, true) != 0) send_error(fd, "entry not found");
+        else rawclip_ipc_send(fd, RAWCLIP_IPC_OK, NULL, 0U);
+        break;
+    case RAWCLIP_IPC_UNPIN:
+        if (parse_id_frame(&frame, &id) != 0 || rawclip_history_set_pinned(&st->history, id, false) != 0) send_error(fd, "entry not found");
+        else rawclip_ipc_send(fd, RAWCLIP_IPC_OK, NULL, 0U);
+        break;
+    case RAWCLIP_IPC_TOGGLE_PIN:
+        if (parse_id_frame(&frame, &id) != 0 || (e = rawclip_history_get(&st->history, id)) == NULL ||
+            rawclip_history_set_pinned(&st->history, id, !e->pinned) != 0) send_error(fd, "entry not found");
+        else rawclip_ipc_send(fd, RAWCLIP_IPC_OK, NULL, 0U);
+        break;
+    case RAWCLIP_IPC_CLEAR_UNPINNED:
+        rawclip_history_clear_unpinned(&st->history);
+        rawclip_ipc_send(fd, RAWCLIP_IPC_OK, NULL, 0U);
         break;
     case RAWCLIP_IPC_CLEAR:
         rawclip_history_clear(&st->history);

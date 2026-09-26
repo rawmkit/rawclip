@@ -156,41 +156,50 @@ be64_to_host(uint64_t v)
 }
 
 int
-rawclip_ipc_pack_entry(uint64_t id, uint64_t timestamp_ms, const char *text,
-                       size_t len, unsigned char **out, uint32_t *out_len)
+rawclip_ipc_pack_entry(uint64_t id, uint64_t timestamp_ms, uint32_t flags,
+                       const char *text, size_t len, unsigned char **out,
+                       uint32_t *out_len)
 {
     unsigned char *p;
-    uint64_t v;
-    if (text == NULL || out == NULL || out_len == NULL || len > UINT32_MAX - 16U) {
+    uint64_t v64;
+    uint32_t v32;
+    if (text == NULL || out == NULL || out_len == NULL || len > UINT32_MAX - 20U) {
         errno = EINVAL;
         return -1;
     }
-    p = malloc(len + 16U);
+    p = malloc(len + 20U);
     if (p == NULL) return -1;
-    v = host_to_be64(id);
-    memcpy(p, &v, 8U);
-    v = host_to_be64(timestamp_ms);
-    memcpy(p + 8U, &v, 8U);
-    memcpy(p + 16U, text, len);
+    v64 = host_to_be64(id);
+    memcpy(p, &v64, 8U);
+    v64 = host_to_be64(timestamp_ms);
+    memcpy(p + 8U, &v64, 8U);
+    v32 = htonl(flags);
+    memcpy(p + 16U, &v32, 4U);
+    memcpy(p + 20U, text, len);
     *out = p;
-    *out_len = (uint32_t)(len + 16U);
+    *out_len = (uint32_t)(len + 20U);
     return 0;
 }
 
 int
 rawclip_ipc_unpack_entry(const unsigned char *data, uint32_t len, uint64_t *id,
-                         uint64_t *timestamp_ms, const char **text, size_t *text_len)
+                         uint64_t *timestamp_ms, uint32_t *flags,
+                         const char **text, size_t *text_len)
 {
-    uint64_t v;
-    if (data == NULL || len < 16U || id == NULL || timestamp_ms == NULL || text == NULL || text_len == NULL) {
+    uint64_t v64;
+    uint32_t v32;
+    if (data == NULL || len < 20U || id == NULL || timestamp_ms == NULL ||
+        flags == NULL || text == NULL || text_len == NULL) {
         errno = EINVAL;
         return -1;
     }
-    memcpy(&v, data, 8U);
-    *id = be64_to_host(v);
-    memcpy(&v, data + 8U, 8U);
-    *timestamp_ms = be64_to_host(v);
-    *text = (const char *)(data + 16U);
-    *text_len = (size_t)len - 16U;
+    memcpy(&v64, data, 8U);
+    *id = be64_to_host(v64);
+    memcpy(&v64, data + 8U, 8U);
+    *timestamp_ms = be64_to_host(v64);
+    memcpy(&v32, data + 16U, 4U);
+    *flags = ntohl(v32);
+    *text = (const char *)(data + 20U);
+    *text_len = (size_t)len - 20U;
     return 0;
 }

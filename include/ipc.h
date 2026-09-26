@@ -1,11 +1,13 @@
 #ifndef RAWCLIP_IPC_H
 #define RAWCLIP_IPC_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#define RAWCLIP_IPC_VERSION 1U
+#define RAWCLIP_IPC_VERSION 2U
 #define RAWCLIP_IPC_HEADER_SIZE 12U
+#define RAWCLIP_ENTRY_FLAG_PINNED 0x00000001U
 
 enum rawclip_ipc_type {
     RAWCLIP_IPC_STATUS = 1,
@@ -19,6 +21,10 @@ enum rawclip_ipc_type {
     RAWCLIP_IPC_TOGGLE = 9,
     RAWCLIP_IPC_RELOAD = 10,
     RAWCLIP_IPC_HEALTH = 11,
+    RAWCLIP_IPC_PIN = 12,
+    RAWCLIP_IPC_UNPIN = 13,
+    RAWCLIP_IPC_CLEAR_UNPINNED = 14,
+    RAWCLIP_IPC_TOGGLE_PIN = 15,
     RAWCLIP_IPC_OK = 100,
     RAWCLIP_IPC_ERROR = 101,
     RAWCLIP_IPC_DATA = 102,
@@ -34,9 +40,11 @@ int rawclip_ipc_send(int fd, uint16_t type, const void *data, uint32_t len);
 int rawclip_ipc_recv(int fd, struct rawclip_ipc_frame *frame);
 void rawclip_ipc_frame_destroy(struct rawclip_ipc_frame *frame);
 int rawclip_ipc_socket_path(char *buf, size_t size, const char *display);
-int rawclip_ipc_pack_entry(uint64_t id, uint64_t timestamp_ms, const char *text,
-                           size_t len, unsigned char **out, uint32_t *out_len);
+int rawclip_ipc_pack_entry(uint64_t id, uint64_t timestamp_ms, uint32_t flags,
+                           const char *text, size_t len, unsigned char **out,
+                           uint32_t *out_len);
 int rawclip_ipc_unpack_entry(const unsigned char *data, uint32_t len, uint64_t *id,
-                             uint64_t *timestamp_ms, const char **text, size_t *text_len);
+                             uint64_t *timestamp_ms, uint32_t *flags,
+                             const char **text, size_t *text_len);
 
 #endif

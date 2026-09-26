@@ -7,6 +7,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+enum rawclip_capture_result {
+    RAWCLIP_CAPTURE_ADMITTED = 0,
+    RAWCLIP_CAPTURE_DROPPED = 1,
+    RAWCLIP_CAPTURE_FATAL = -1,
+};
+
 typedef int (*rawclip_capture_fn)(void *userdata, const char *text, size_t len,
                                   uint64_t timestamp_ms);
 
