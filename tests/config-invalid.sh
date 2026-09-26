@@ -27,6 +27,7 @@ check_bad clipboard_sync_without_clipboard 'selection = { clipboard = false; pri
 check_bad bidirectional_without_primary 'selection = { clipboard = true; primary = false; synchronize = "bidirectional"; };'
 check_bad empty_rule 'exclude = ( {} );'
 check_bad unknown_rule 'exclude = ( { process = "foo"; } );'
+check_bad wrong_rule_type 'exclude = ( { class = "Browser"; title = 42; } );'
 check_bad empty_menu 'menu = { command = ""; };'
 check_bad preview_too_small 'menu = { preview_chars = 0; };'
 check_bad preview_too_large 'menu = { preview_chars = 5000; };'

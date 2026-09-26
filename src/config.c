@@ -172,10 +172,26 @@ parse_rules(config_t *c, struct rawclip_config *cfg, char *err, size_t err_size)
         config_setting_t *rule = config_setting_get_elem(list, i);
         const char *value;
         bool any = false;
+        int j;
         if (rule == NULL || config_setting_type(rule) != CONFIG_TYPE_GROUP) {
             set_error(err, err_size, "exclude[%d] must be a group", i);
             errno = EINVAL;
             return -1;
+        }
+        for (j = 0; j < config_setting_length(rule); j++) {
+            config_setting_t *field = config_setting_get_elem(rule, j);
+            const char *name = field == NULL ? NULL : config_setting_name(field);
+            if (name == NULL || (strcmp(name, "instance") != 0 && strcmp(name, "class") != 0 &&
+                                 strcmp(name, "title") != 0 && strcmp(name, "executable") != 0)) {
+                set_error(err, err_size, "exclude[%d] contains unknown fields", i);
+                errno = EINVAL;
+                return -1;
+            }
+            if (config_setting_type(field) != CONFIG_TYPE_STRING) {
+                set_error(err, err_size, "exclude[%d].%s must be a string", i, name);
+                errno = EINVAL;
+                return -1;
+            }
         }
 #define RULE_STRING(KEY, FIELD) \
         do { \
@@ -194,19 +210,6 @@ parse_rules(config_t *c, struct rawclip_config *cfg, char *err, size_t err_size)
             set_error(err, err_size, "exclude[%d] has no match fields", i);
             errno = EINVAL;
             return -1;
-        }
-        {
-            int j;
-            for (j = 0; j < config_setting_length(rule); j++) {
-                config_setting_t *field = config_setting_get_elem(rule, j);
-                const char *name = field == NULL ? NULL : config_setting_name(field);
-                if (name == NULL || (strcmp(name, "instance") != 0 && strcmp(name, "class") != 0 &&
-                                     strcmp(name, "title") != 0 && strcmp(name, "executable") != 0)) {
-                    set_error(err, err_size, "exclude[%d] contains unknown fields", i);
-                    errno = EINVAL;
-                    return -1;
-                }
-            }
         }
     }
     return 0;
