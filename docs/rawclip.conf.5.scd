@@ -18,7 +18,7 @@ Unknown keys and wrong scalar types are errors.
 	Maximum in-memory history length. Default: 256.
 
 *history.max_entry_bytes* = integer
-	Maximum text payload size before X-server replay limits are applied.
+	Maximum admitted text payload size for direct or incremental X11 transfers.
 	Default: 131072.
 
 *history.deduplicate* = boolean

@@ -75,10 +75,16 @@ the process; reconnect/recovery is not attempted.
 Selecting a history entry makes rawclipd the X11 `CLIPBOARD` owner. It serves
 `TARGETS`, `TIMESTAMP`, `UTF8_STRING`, and representable `STRING` requests.
 
-rawclip does not yet implement outgoing INCR. Captured items are therefore
-bounded by
-a conservative limit derived from the X server's maximum direct request size.
-Items which cannot later be served safely are not admitted.
+Payloads that fit a safe X server property update are served directly. Larger
+payloads use ICCCM `INCR`: each accepted requestor receives a private snapshot
+and advances the transfer by deleting each property chunk. Outgoing transfers
+are bounded to a small fixed concurrency limit and inactive transfers are
+expired on later transfer activity. Requestor destruction, selection loss,
+explicit clipboard clearing, and replacement by a newly selected history item
+all discard associated transfer state.
+
+The configured history byte bound, rather than the X server's direct request
+size, is therefore the admission authority for both incoming and replayed text.
 
 ## Local control socket
 
@@ -108,7 +114,7 @@ rawclip executes the configured menu program directly with an argv vector. It
 does not invoke a shell. The initial integration expects a rawmenu-compatible:
 
 ```text
-COMMAND select -p PROMPT
+COMMAND -M select -p PROMPT
 ```
 
 The menu receives sanitized previews rather than raw multiline text, prefixed
@@ -118,12 +124,12 @@ clipboard ownership changes.
 rawclip does not register global shortcuts. Keyboard authority belongs to the
 window manager.
 
-## Out of scope for 0.1.0
+## Out of scope
 
 * persistence or synchronized history;
+* automatic `PRIMARY`/`CLIPBOARD` synchronization;
 * encryption-at-rest;
 * arbitrary MIME/image/HTML history;
-* outgoing INCR replay;
 * Wayland;
 * global hotkeys;
 * automatic clipboard expiry;

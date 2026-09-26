@@ -16,7 +16,8 @@ rawclipd - X11 clipboard history and replay service
 
 *rawclipd* monitors configured X11 selections with XFixes, applies capture
 policy before requesting text, stores bounded history in memory, and serves
-selected entries as the CLIPBOARD owner.
+selected entries as the CLIPBOARD owner. Direct and ICCCM INCR transfers are
+supported in both capture and replay directions.
 
 The daemon remains in the foreground. Session startup and global keyboard
 bindings belong to the surrounding desktop/window-manager configuration.

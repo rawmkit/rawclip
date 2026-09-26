@@ -202,19 +202,29 @@ must match for the source to be excluded.
 
 ## Text contract
 
-0.1.0 is intentionally text-only.
+rawclip is intentionally text-only.
 
 rawclip accepts modern `UTF8_STRING` and legacy `STRING` offers. UTF-8 is
 validated before history admission. `STRING` data is interpreted as ISO-8859-1
 and normalized to UTF-8. Replay advertises `UTF8_STRING`; `STRING` is produced
 only when every stored code point is representable as ISO-8859-1.
 
-Incoming X11 INCR transfers are supported. History admission is bounded by both
-the configured entry limit and the current X server's direct property request
-limit, because 0.1.0 deliberately does not implement outgoing INCR replay.
+Both incoming and outgoing X11 `INCR` transfers are supported. History
+admission is bounded by `history.max_entry_bytes`, not by the X server's
+single-request property limit. When rawclip owns `CLIPBOARD`, values larger
+than a safe direct property update are streamed incrementally to requestors.
+Outgoing transfers are bounded and abandoned requestors are discarded.
 Oversized selections are ignored rather than truncated.
 
-Images, HTML, URI lists and arbitrary MIME graphs are out of scope for 0.1.0.
+Images, HTML, URI lists and arbitrary MIME graphs remain out of scope.
+
+## Selection roadmap
+
+`PRIMARY` monitoring already exists as an independent opt-in capture source.
+Automatic synchronization between `PRIMARY` and `CLIPBOARD` is intentionally
+not implemented yet. If added, it will be a separate opt-in policy because
+selection-to-clipboard synchronization changes ordinary highlight semantics and
+can cause text to become explicitly pasteable without a copy action.
 
 ## Persistence
 
