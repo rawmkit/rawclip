@@ -23,6 +23,7 @@ struct menu_entry {
     uint64_t id;
     char *text;
     size_t len;
+    bool pinned;
 };
 
 static void
@@ -31,7 +32,7 @@ usage(FILE *f)
     fprintf(f,
             "usage: rawclip [-c path] COMMAND [ARG]\n"
             "       rawclip -v\n"
-            "commands: menu [select|delete] list show select delete clear pause resume toggle status health reload\n");
+            "commands: menu [select|delete|toggle-pin] list show select delete pin unpin clear [unpinned] pause resume toggle status health reload\n");
 }
 
 static int
@@ -128,6 +129,7 @@ list_command(void)
     for (;;) {
         struct rawclip_ipc_frame frame;
         uint64_t id, ts;
+        uint32_t flags;
         const char *text;
         size_t len;
         if (rawclip_ipc_recv(fd, &frame) != 0) goto fail;
@@ -142,13 +144,14 @@ list_command(void)
             close(fd);
             return 1;
         }
-        if (frame.type != RAWCLIP_IPC_DATA || rawclip_ipc_unpack_entry(frame.data, frame.len, &id, &ts, &text, &len) != 0) {
+        if (frame.type != RAWCLIP_IPC_DATA || rawclip_ipc_unpack_entry(frame.data, frame.len, &id, &ts, &flags, &text, &len) != 0) {
             rawclip_ipc_frame_destroy(&frame);
             errno = EPROTO;
             goto fail;
         }
         (void)ts;
-        printf("%llu\t", (unsigned long long)id);
+        printf("%llu\t%c ", (unsigned long long)id,
+               (flags & RAWCLIP_ENTRY_FLAG_PINNED) != 0U ? '*' : '-');
         preview(stdout, text, len, 200U);
         putchar('\n');
         rawclip_ipc_frame_destroy(&frame);
@@ -173,6 +176,7 @@ collect_entries(struct menu_entry **out, size_t *out_len)
     for (;;) {
         struct rawclip_ipc_frame frame;
         uint64_t id, ts;
+        uint32_t flags;
         const char *text;
         size_t text_len;
         if (rawclip_ipc_recv(fd, &frame) != 0) goto fail;
@@ -180,7 +184,7 @@ collect_entries(struct menu_entry **out, size_t *out_len)
             rawclip_ipc_frame_destroy(&frame);
             break;
         }
-        if (frame.type != RAWCLIP_IPC_DATA || rawclip_ipc_unpack_entry(frame.data, frame.len, &id, &ts, &text, &text_len) != 0) {
+        if (frame.type != RAWCLIP_IPC_DATA || rawclip_ipc_unpack_entry(frame.data, frame.len, &id, &ts, &flags, &text, &text_len) != 0) {
             rawclip_ipc_frame_destroy(&frame);
             errno = EPROTO;
             goto fail;
@@ -195,6 +199,7 @@ collect_entries(struct menu_entry **out, size_t *out_len)
         entries[len].id = id;
         entries[len].text = rawclip_xstrndup(text, text_len);
         entries[len].len = text_len;
+        entries[len].pinned = (flags & RAWCLIP_ENTRY_FLAG_PINNED) != 0U;
         if (entries[len].text == NULL) { rawclip_ipc_frame_destroy(&frame); goto fail; }
         len++;
         (void)ts;
@@ -227,6 +232,7 @@ free_entries(struct menu_entry *entries, size_t len)
 enum menu_action {
     MENU_SELECT = 0,
     MENU_DELETE,
+    MENU_TOGGLE_PIN,
 };
 
 static int
@@ -247,8 +253,9 @@ menu_command(const struct rawclip_config *cfg, enum menu_action action)
     char action_prompt[256];
     const char *prompt = cfg->menu_prompt;
 
-    if (action == MENU_DELETE) {
-        int pn = snprintf(action_prompt, sizeof(action_prompt), "%s delete", cfg->menu_prompt);
+    if (action == MENU_DELETE || action == MENU_TOGGLE_PIN) {
+        const char *suffix = action == MENU_DELETE ? "delete" : "pin";
+        int pn = snprintf(action_prompt, sizeof(action_prompt), "%s %s", cfg->menu_prompt, suffix);
         if (pn < 0 || (size_t)pn >= sizeof(action_prompt)) { errno = ENAMETOOLONG; return -1; }
         prompt = action_prompt;
     }
@@ -277,7 +284,8 @@ menu_command(const struct rawclip_config *cfg, enum menu_action action)
     if (input == NULL) goto parent_fail;
     inpipe[1] = -1;
     for (i = 0U; i < len; i++) {
-        fprintf(input, "%llu\t", (unsigned long long)entries[i].id);
+        fprintf(input, "%llu\t%c ", (unsigned long long)entries[i].id,
+                entries[i].pinned ? '*' : '-');
         preview(input, entries[i].text, entries[i].len, cfg->menu_preview_chars);
         fputc('\n', input);
     }
@@ -303,8 +311,12 @@ menu_command(const struct rawclip_config *cfg, enum menu_action action)
     if (strchr(selected, '\n') != NULL) *strchr(selected, '\n') = '\0';
     if (rawclip_parse_u64(selected, &id) != 0) { errno = EPROTO; goto fail; }
     snprintf(idbuf, sizeof(idbuf), "%llu", (unsigned long long)id);
-    if (request_once(action == MENU_DELETE ? RAWCLIP_IPC_DELETE : RAWCLIP_IPC_SELECT,
-                     idbuf, &reply) != 0) goto fail;
+    {
+        uint16_t request_type = RAWCLIP_IPC_SELECT;
+        if (action == MENU_DELETE) request_type = RAWCLIP_IPC_DELETE;
+        else if (action == MENU_TOGGLE_PIN) request_type = RAWCLIP_IPC_TOGGLE_PIN;
+        if (request_once(request_type, idbuf, &reply) != 0) goto fail;
+    }
     status = print_reply(&reply, false);
     rawclip_ipc_frame_destroy(&reply);
     free_entries(entries, len);
@@ -357,6 +369,7 @@ main(int argc, char **argv)
         if (arg != NULL) {
             if (strcmp(arg, "select") == 0) action = MENU_SELECT;
             else if (strcmp(arg, "delete") == 0) action = MENU_DELETE;
+            else if (strcmp(arg, "toggle-pin") == 0) action = MENU_TOGGLE_PIN;
             else { usage(stderr); return 2; }
         }
         memset(&cfg, 0, sizeof(cfg));
@@ -375,12 +388,18 @@ main(int argc, char **argv)
         if (rc < 0) fprintf(stderr, "rawclip: list: %s\n", strerror(errno));
         return rc < 0 ? 1 : rc;
     }
+    if (strcmp(cmd, "clear") == 0) {
+        if (arg == NULL) type = RAWCLIP_IPC_CLEAR;
+        else if (strcmp(arg, "unpinned") == 0) { type = RAWCLIP_IPC_CLEAR_UNPINNED; arg = NULL; }
+        else { usage(stderr); return 2; }
+    } else
 #define CMD0(NAME, TYPE) if (strcmp(cmd, NAME) == 0) { if (arg != NULL) { usage(stderr); return 2; } type = TYPE; }
 #define CMD1(NAME, TYPE) if (strcmp(cmd, NAME) == 0) { if (arg == NULL) { usage(stderr); return 2; } type = TYPE; }
     CMD1("show", RAWCLIP_IPC_SHOW)
     else CMD1("select", RAWCLIP_IPC_SELECT)
     else CMD1("delete", RAWCLIP_IPC_DELETE)
-    else CMD0("clear", RAWCLIP_IPC_CLEAR)
+    else CMD1("pin", RAWCLIP_IPC_PIN)
+    else CMD1("unpin", RAWCLIP_IPC_UNPIN)
     else CMD0("pause", RAWCLIP_IPC_PAUSE)
     else CMD0("resume", RAWCLIP_IPC_RESUME)
     else CMD0("toggle", RAWCLIP_IPC_TOGGLE)
