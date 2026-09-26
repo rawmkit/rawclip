@@ -1,3 +1,42 @@
+rawclip 0.4.0 — 2026-09-26
+==========================
+
+Selection policy
+----------------
+
+* Add explicit `selection.synchronize` policy with `none`,
+  `primary-to-clipboard`, `clipboard-to-primary`, and `bidirectional` modes.
+  Synchronization remains disabled by default and each direction requires its
+  source selection to be monitored.
+* Keep PRIMARY monitoring independent from synchronization, so highlighted text
+  can enter history without becoming CLIPBOARD authority when policy is `none`.
+* Synchronize only text which has already passed sensitive-hint, owner-exclusion,
+  text-validation, and bounded history-admission policy. Secret or rejected
+  offers never become authority for the opposite selection.
+
+X11 ownership
+-------------
+
+* Track CLIPBOARD and PRIMARY ownership independently and serve either selection
+  through the same direct/INCR replay path.
+* Suppress rawclip's own XFixes ownership events and avoid reasserting identical
+  destination values, preventing the daemon from feeding its own synchronized
+  selections back into history.
+* Record whether ownership came from explicit CLIPBOARD replay or synchronization.
+  Tightening policy on reload releases synchronization-owned selections while
+  preserving explicit replay authority.
+* Associate outgoing incremental transfers with their selection so losing one
+  selection cancels only the transfer state governed by that selection.
+
+Diagnostics and testing
+-----------------------
+
+* Extend `rawclip status` with the live CLIPBOARD/PRIMARY monitor flags and the
+  canonical synchronization mode.
+* Exercise PRIMARY-only history, both bidirectional paths, one-way directionality,
+  synchronized history replay, secret refusal on both selections, self-event
+  suppression, and policy reload under Xvfb.
+
 rawclip 0.3.0 — 2026-09-26
 ==========================
 
