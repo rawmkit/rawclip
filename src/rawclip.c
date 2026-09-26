@@ -58,6 +58,25 @@ connect_daemon(void)
     return fd;
 }
 
+
+static void
+report_control_error(const char *context)
+{
+    if (errno == EPROTONOSUPPORT) {
+        fprintf(stderr,
+                "rawclip: %s: incompatible rawclipd control protocol; "
+                "restart rawclipd after upgrading rawclip\n", context);
+        return;
+    }
+    if (errno == ECONNRESET) {
+        fprintf(stderr,
+                "rawclip: %s: control connection reset; rawclipd may be stale "
+                "or incompatible; restart rawclipd and retry\n", context);
+        return;
+    }
+    fprintf(stderr, "rawclip: %s: %s\n", context, strerror(errno));
+}
+
 static int
 request_once(uint16_t type, const char *arg, struct rawclip_ipc_frame *reply)
 {
@@ -418,13 +437,13 @@ main(int argc, char **argv)
         }
         rc = menu_command(&cfg, action);
         rawclip_config_destroy(&cfg);
-        if (rc < 0) fprintf(stderr, "rawclip: menu: %s\n", strerror(errno));
+        if (rc < 0) report_control_error("menu");
         return rc < 0 ? 1 : rc;
     }
     if (strcmp(cmd, "list") == 0) {
         if (arg != NULL) { usage(stderr); return 2; }
         rc = list_command();
-        if (rc < 0) fprintf(stderr, "rawclip: list: %s\n", strerror(errno));
+        if (rc < 0) report_control_error("list");
         return rc < 0 ? 1 : rc;
     }
     if (strcmp(cmd, "clear") == 0) {
@@ -454,7 +473,7 @@ main(int argc, char **argv)
     }
     if (type == RAWCLIP_IPC_SHOW) exact = true;
     if (request_once(type, arg, &reply) != 0) {
-        fprintf(stderr, "rawclip: %s\n", strerror(errno));
+        report_control_error(cmd);
         return 1;
     }
     rc = print_reply(&reply, exact);

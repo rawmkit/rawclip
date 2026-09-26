@@ -112,8 +112,12 @@ rawclip_ipc_recv(int fd, struct rawclip_ipc_frame *frame)
     if (rawclip_read_all(fd, header, sizeof(header)) != 0) {
         return -1;
     }
-    if (memcmp(header, "RCLP", 4U) != 0 || read_u16(header + 4U) != RAWCLIP_IPC_VERSION) {
+    if (memcmp(header, "RCLP", 4U) != 0) {
         errno = EPROTO;
+        return -1;
+    }
+    if (read_u16(header + 4U) != RAWCLIP_IPC_VERSION) {
+        errno = EPROTONOSUPPORT;
         return -1;
     }
     len = read_u32(header + 8U);

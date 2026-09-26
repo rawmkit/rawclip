@@ -2,6 +2,7 @@
 
 #include "ipc.h"
 
+#include <arpa/inet.h>
 #include <assert.h>
 #include <errno.h>
 #include <stdint.h>
@@ -35,6 +36,20 @@ main(void)
     errno = 0;
     assert(rawclip_ipc_recv(sv[1], &frame) == -1);
     assert(errno == EPROTO);
+    close(sv[0]);
+    close(sv[1]);
+
+    assert(socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0);
+    memset(bad, 0, sizeof(bad));
+    memcpy(bad, "RCLP", 4U);
+    {
+        uint16_t version = htons((uint16_t)(RAWCLIP_IPC_VERSION + 1U));
+        memcpy(bad + 4U, &version, sizeof(version));
+    }
+    assert(write(sv[0], bad, sizeof(bad)) == (ssize_t)sizeof(bad));
+    errno = 0;
+    assert(rawclip_ipc_recv(sv[1], &frame) == -1);
+    assert(errno == EPROTONOSUPPORT);
     close(sv[0]);
     close(sv[1]);
 

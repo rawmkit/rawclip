@@ -133,6 +133,18 @@ ipc_probe = executable(
   include_directories: inc,
 )
 
+stale_daemon = executable(
+  'stale-daemon',
+  ['tests/stale-daemon.c', 'src/ipc.c', 'src/util.c'],
+  include_directories: inc,
+)
+
+test(
+  'stale-daemon',
+  find_program('tests/stale-daemon.sh'),
+  args: [rawclip, stale_daemon],
+)
+
 xvfb = find_program('Xvfb', required: false)
 if xvfb.found()
   test(
