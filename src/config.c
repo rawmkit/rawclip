@@ -3,6 +3,7 @@
 #include "config.h"
 #include "rawclip.h"
 #include "util.h"
+#include "version.h"
 
 #include <errno.h>
 #include <libconfig.h>
@@ -380,7 +381,12 @@ rawclip_config_load(struct rawclip_config *cfg, const char *explicit_path,
     if (explicit_path != NULL) {
         return read_one(cfg, explicit_path, true, err, err_size);
     }
-    if (read_one(cfg, "/etc/rawclip/rawclip.conf", false, err, err_size) != 0) {
+    if (snprintf(path, sizeof(path), "%s/rawclip/rawclip.conf",
+                 RAWCLIP_SYSCONFDIR) >= (int)sizeof(path)) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+    if (read_one(cfg, path, false, err, err_size) != 0) {
         return -1;
     }
     xdg = getenv("XDG_CONFIG_HOME");

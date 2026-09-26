@@ -51,8 +51,14 @@ rawclip = executable(
   install: true,
 )
 
+runtime_sysconfdir = get_option('sysconfdir')
+if not runtime_sysconfdir.startswith('/')
+  runtime_sysconfdir = get_option('prefix') / runtime_sysconfdir
+endif
+
 conf = configuration_data()
 conf.set_quoted('RAWCLIP_VERSION', meson.project_version())
+conf.set_quoted('RAWCLIP_SYSCONFDIR', runtime_sysconfdir)
 configure_file(
   input: 'include/version.h.in',
   output: 'version.h',
@@ -97,6 +103,13 @@ util_test = executable(
   include_directories: inc,
 )
 test('util', util_test)
+
+build_contract_test = executable(
+  'build-contract-test',
+  'tests/build-contract-test.c',
+  include_directories: inc,
+)
+test('build-contract', build_contract_test, args: [runtime_sysconfdir])
 
 test(
   'config',
