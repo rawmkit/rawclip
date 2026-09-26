@@ -60,6 +60,30 @@ kill "$owner_pid"
 wait "$owner_pid"
 owner_pid=
 grep -q '^text_requests=0$' "$state/secret-owner.out"
+grep -q '^hint_requests=1$' "$state/secret-owner.out"
+
+# A non-secret value on the convention target is not itself sensitive.
+"$helper" offer 'hinted-public-value' --hint public >"$state/public-hint-owner.out" &
+owner_pid=$!
+sleep 0.15
+"$rawclip" list | grep -q 'hinted-public-value'
+kill "$owner_pid"
+wait "$owner_pid"
+owner_pid=
+grep -q '^text_requests=1$' "$state/public-hint-owner.out"
+grep -q '^hint_requests=1$' "$state/public-hint-owner.out"
+"$rawclip" clear
+
+# An advertised hint which cannot be retrieved fails closed before text.
+"$helper" offer 'broken-hint-value' --broken-hint >"$state/broken-hint-owner.out" &
+owner_pid=$!
+sleep 0.15
+[ -z "$("$rawclip" list)" ]
+kill "$owner_pid"
+wait "$owner_pid"
+owner_pid=
+grep -q '^text_requests=0$' "$state/broken-hint-owner.out"
+grep -q '^hint_requests=1$' "$state/broken-hint-owner.out"
 
 # Excluded owners are rejected before even TARGETS/text transfer reaches history.
 "$helper" offer 'excluded-value' --class ExcludedApp >"$state/excluded-owner.out" &

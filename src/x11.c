@@ -28,6 +28,7 @@ struct owner_meta {
 enum receive_stage {
     RECEIVE_IDLE,
     RECEIVE_TARGETS,
+    RECEIVE_HINT,
     RECEIVE_TEXT,
     RECEIVE_INCR,
 };
@@ -54,6 +55,7 @@ struct rawclip_x11 {
     bool paused;
     Atom pending_selection;
     Atom pending_target;
+    Atom pending_text_target;
     Window pending_owner;
     enum receive_stage stage;
     unsigned char *buf;
@@ -226,6 +228,7 @@ reset_receive(struct rawclip_x11 *x)
     x->stage = RECEIVE_IDLE;
     x->pending_selection = None;
     x->pending_target = None;
+    x->pending_text_target = None;
     x->pending_owner = None;
     XDeleteProperty(x->dpy, x->win, x->property);
 }
@@ -279,21 +282,36 @@ target_list_contains(const Atom *atoms, unsigned long n, Atom target)
     return false;
 }
 
-static int
-request_text(struct rawclip_x11 *x, const Atom *atoms, unsigned long n)
+static Atom
+choose_text_target(struct rawclip_x11 *x, const Atom *atoms, unsigned long n)
 {
-    Atom target = None;
-    if (target_list_contains(atoms, n, x->utf8)) target = x->utf8;
-    else if (target_list_contains(atoms, n, x->string)) target = x->string;
-    if (target == None) {
-        reset_receive(x);
-        return 0;
-    }
-    x->stage = RECEIVE_TEXT;
+    if (target_list_contains(atoms, n, x->utf8)) return x->utf8;
+    if (target_list_contains(atoms, n, x->string)) return x->string;
+    return None;
+}
+
+static void
+request_target(struct rawclip_x11 *x, enum receive_stage stage, Atom target)
+{
+    x->stage = stage;
     x->pending_target = target;
-    XConvertSelection(x->dpy, x->pending_selection, target, x->property, x->win, CurrentTime);
+    XConvertSelection(x->dpy, x->pending_selection, target, x->property, x->win,
+                      CurrentTime);
     XFlush(x->dpy);
-    return 0;
+}
+
+static void
+request_text(struct rawclip_x11 *x, Atom target)
+{
+    x->pending_text_target = None;
+    request_target(x, RECEIVE_TEXT, target);
+}
+
+static void
+request_hint(struct rawclip_x11 *x, Atom text_target)
+{
+    x->pending_text_target = text_target;
+    request_target(x, RECEIVE_HINT, x->sensitive);
 }
 
 static int
@@ -305,24 +323,51 @@ selection_notify(struct rawclip_x11 *x, const XSelectionEvent *ev)
     unsigned char *data = NULL;
     int rc = 0;
 
-    if (ev->requestor != x->win || ev->selection != x->pending_selection || ev->property == None) {
-        if (ev->requestor == x->win && ev->selection == x->pending_selection) reset_receive(x);
+    if (ev->requestor != x->win || ev->selection != x->pending_selection ||
+        ev->target != x->pending_target || ev->property == None) {
+        if (ev->requestor == x->win && ev->selection == x->pending_selection)
+            reset_receive(x);
         return 0;
     }
-    if (XGetWindowProperty(x->dpy, x->win, x->property, 0, (long)((x->cfg->max_entry_bytes + 3U) / 4U + 16U), True,
-                           AnyPropertyType, &actual, &format, &nitems, &after, &data) != Success) {
+    if (x->pending_owner == None ||
+        XGetSelectionOwner(x->dpy, x->pending_selection) != x->pending_owner) {
+        reset_receive(x);
+        return 0;
+    }
+    if (XGetWindowProperty(x->dpy, x->win, x->property, 0,
+                           x->stage == RECEIVE_HINT ? 16L :
+                           (long)((x->cfg->max_entry_bytes + 3U) / 4U + 16U),
+                           True, AnyPropertyType, &actual, &format, &nitems,
+                           &after, &data) != Success) {
         reset_receive(x);
         return -1;
     }
-    if (x->stage == RECEIVE_TARGETS) {
+    if (after != 0U) {
+        reset_receive(x);
+    } else if (x->stage == RECEIVE_TARGETS) {
         if (actual == XA_ATOM && format == 32 && data != NULL) {
             const Atom *atoms = (const Atom *)data;
-            if (x->cfg->honor_password_manager_hint &&
-                target_list_contains(atoms, nitems, x->sensitive)) {
+            Atom text_target = choose_text_target(x, atoms, nitems);
+            if (text_target == None) {
                 reset_receive(x);
+            } else if (x->cfg->honor_password_manager_hint &&
+                       target_list_contains(atoms, nitems, x->sensitive)) {
+                request_hint(x, text_target);
             } else {
-                rc = request_text(x, atoms, nitems);
+                request_text(x, text_target);
             }
+        } else {
+            reset_receive(x);
+        }
+    } else if (x->stage == RECEIVE_HINT) {
+        if (format != 8 || data == NULL || nitems == 0U ||
+            memchr(data, '\0', (size_t)nitems) != NULL) {
+            reset_receive(x);
+        } else if (nitems == 6U && memcmp(data, "secret", 6U) == 0) {
+            reset_receive(x);
+        } else if (x->pending_text_target != None) {
+            Atom text_target = x->pending_text_target;
+            request_text(x, text_target);
         } else {
             reset_receive(x);
         }
@@ -367,13 +412,24 @@ property_notify(struct rawclip_x11 *x, const XPropertyEvent *ev)
     unsigned long nitems = 0U, after = 0U;
     unsigned char *data = NULL;
     int rc = 0;
-    if (x->stage != RECEIVE_INCR || ev->window != x->win || ev->atom != x->property || ev->state != PropertyNewValue) return 0;
-    if (XGetWindowProperty(x->dpy, x->win, x->property, 0, (long)((x->cfg->max_entry_bytes + 3U) / 4U + 16U), True,
-                           AnyPropertyType, &actual, &format, &nitems, &after, &data) != Success) {
+    if (x->stage != RECEIVE_INCR || ev->window != x->win ||
+        ev->atom != x->property || ev->state != PropertyNewValue) return 0;
+    if (x->pending_owner == None ||
+        XGetSelectionOwner(x->dpy, x->pending_selection) != x->pending_owner) {
+        reset_receive(x);
+        return 0;
+    }
+    if (XGetWindowProperty(x->dpy, x->win, x->property, 0,
+                           (long)((x->cfg->max_entry_bytes + 3U) / 4U + 16U),
+                           True, AnyPropertyType, &actual, &format, &nitems,
+                           &after, &data) != Success) {
         reset_receive(x);
         return -1;
     }
-    if (nitems == 0U) {
+    if (after != 0U) {
+        XDeleteProperty(x->dpy, x->win, x->property);
+        reset_receive(x);
+    } else if (nitems == 0U) {
         rc = finish_text(x);
     } else if (format != 8 || data == NULL) {
         reset_receive(x);
@@ -456,14 +512,20 @@ selection_request(struct rawclip_x11 *x, const XSelectionRequestEvent *req)
 static void
 owner_changed(struct rawclip_x11 *x, const XFixesSelectionNotifyEvent *ev)
 {
-    if (x->paused || ev->owner == None || ev->owner == x->win) return;
+    if (x->paused) return;
     if ((ev->selection == x->clipboard && !x->cfg->monitor_clipboard) ||
         (ev->selection == x->primary && !x->cfg->monitor_primary)) return;
+    if (ev->owner == None) {
+        if (x->pending_selection == ev->selection) reset_receive(x);
+        return;
+    }
+    if (ev->owner == x->win) return;
     reset_receive(x);
     if (owner_excluded(x, ev->owner)) return;
     x->pending_selection = ev->selection;
     x->pending_owner = ev->owner;
     x->stage = RECEIVE_TARGETS;
+    x->pending_target = x->targets;
     XConvertSelection(x->dpy, ev->selection, x->targets, x->property, x->win, ev->timestamp);
     XFlush(x->dpy);
 }

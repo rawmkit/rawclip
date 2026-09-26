@@ -23,12 +23,14 @@ on_signal(int sig)
 }
 
 static int
-offer(const char *text, bool secret, const char *class_name)
+offer(const char *text, const char *hint_value, bool broken_hint,
+      const char *class_name)
 {
     Display *dpy = XOpenDisplay(NULL);
     Window win;
     Atom clipboard, targets, utf8, sensitive;
     unsigned long text_requests = 0U;
+    unsigned long hint_requests = 0U;
     struct sigaction sa;
     if (dpy == NULL) return 2;
     win = XCreateSimpleWindow(dpy, DefaultRootWindow(dpy), 0, 0, 1, 1, 0, 0, 0);
@@ -72,7 +74,7 @@ offer(const char *text, bool secret, const char *class_name)
                     int n = 0;
                     list[n++] = targets;
                     list[n++] = utf8;
-                    if (secret) list[n++] = sensitive;
+                    if (hint_value != NULL || broken_hint) list[n++] = sensitive;
                     XChangeProperty(dpy, req->requestor, property, XA_ATOM, 32,
                                     PropModeReplace, (unsigned char *)list, n);
                     ok = true;
@@ -82,11 +84,16 @@ offer(const char *text, bool secret, const char *class_name)
                                     PropModeReplace, (const unsigned char *)text,
                                     (int)strlen(text));
                     ok = true;
-                } else if (req->target == sensitive && secret) {
-                    const char value[] = "secret";
-                    XChangeProperty(dpy, req->requestor, property, utf8, 8,
-                                    PropModeReplace, (const unsigned char *)value, 6);
-                    ok = true;
+                } else if (req->target == sensitive &&
+                           (hint_value != NULL || broken_hint)) {
+                    hint_requests++;
+                    if (!broken_hint && hint_value != NULL) {
+                        XChangeProperty(dpy, req->requestor, property, utf8, 8,
+                                        PropModeReplace,
+                                        (const unsigned char *)hint_value,
+                                        (int)strlen(hint_value));
+                        ok = true;
+                    }
                 }
                 if (ok) out.property = property;
                 XSendEvent(dpy, req->requestor, False, 0, (XEvent *)&out);
@@ -98,6 +105,7 @@ offer(const char *text, bool secret, const char *class_name)
         { struct timespec ts = {0, 1000000L}; (void)nanosleep(&ts, NULL); }
     }
     printf("text_requests=%lu\n", text_requests);
+    printf("hint_requests=%lu\n", hint_requests);
     XDestroyWindow(dpy, win);
     XCloseDisplay(dpy);
     return 0;
@@ -149,15 +157,19 @@ main(int argc, char **argv)
     }
     if (argc >= 2 && strcmp(argv[1], "paste") == 0 && argc == 2) return paste();
     if (argc >= 3 && strcmp(argv[1], "offer") == 0) {
-        bool secret = false;
+        const char *hint_value = NULL;
+        bool broken_hint = false;
         const char *class_name = NULL;
         int i;
         for (i = 3; i < argc; i++) {
-            if (strcmp(argv[i], "--secret") == 0) secret = true;
+            if (strcmp(argv[i], "--secret") == 0) hint_value = "secret";
+            else if (strcmp(argv[i], "--hint") == 0 && i + 1 < argc) hint_value = argv[++i];
+            else if (strcmp(argv[i], "--broken-hint") == 0) broken_hint = true;
             else if (strcmp(argv[i], "--class") == 0 && i + 1 < argc) class_name = argv[++i];
             else return 2;
         }
-        return offer(argv[2], secret, class_name);
+        if (broken_hint && hint_value != NULL) return 2;
+        return offer(argv[2], hint_value, broken_hint, class_name);
     }
     return 2;
 }
