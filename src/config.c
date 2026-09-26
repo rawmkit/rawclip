@@ -331,7 +331,7 @@ apply_config(config_t *c, struct rawclip_config *cfg, char *err, size_t err_size
     if (config_lookup_bool(c, "security.honor_password_manager_hint", &b)) cfg->honor_password_manager_hint = b != 0;
     if (config_lookup_string(c, "menu.command", &s) && replace_string(&cfg->menu_command, s) != 0) return -1;
     if (config_lookup_string(c, "menu.prompt", &s) && replace_string(&cfg->menu_prompt, s) != 0) return -1;
-    if (read_size(c, "menu.preview_chars", &cfg->menu_preview_chars, 8U, 4096U, err, err_size) != 0) return -1;
+    if (read_size(c, "menu.preview_chars", &cfg->menu_preview_chars, 1U, 4096U, err, err_size) != 0) return -1;
     if (cfg->menu_command == NULL || *cfg->menu_command == '\0') {
         set_error(err, err_size, "menu.command must not be empty");
         errno = EINVAL;
