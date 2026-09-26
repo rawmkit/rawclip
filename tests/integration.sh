@@ -39,6 +39,12 @@ exclude = ( { class = "ExcludedApp"; } );
 EOF2
 cat >"$state/fake-menu" <<'EOF2'
 #!/bin/sh
+set -eu
+[ "$#" -eq 4 ]
+[ "$1" = "-M" ]
+[ "$2" = "select" ]
+[ "$3" = "-p" ]
+[ "$4" = "clipboard" ]
 IFS= read -r first || exit 1
 printf '%s\n' "$first"
 EOF2
