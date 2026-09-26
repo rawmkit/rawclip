@@ -312,13 +312,14 @@ probe_owner(void)
 {
     Display *dpy = XOpenDisplay(NULL);
     Window win;
-    Atom clipboard, targets, timestamp, utf8, property, unknown;
+    Atom clipboard, targets, multiple, atom_pair, timestamp, utf8, property;
+    Atom unknown;
     XEvent ev;
     Atom actual;
     int format;
     unsigned long nitems, after;
     unsigned char *data = NULL;
-    bool have_targets = false, have_timestamp = false;
+    bool have_targets = false, have_multiple = false, have_timestamp = false;
     bool have_utf8 = false, have_string = false;
     unsigned long i;
 
@@ -326,6 +327,8 @@ probe_owner(void)
     win = XCreateSimpleWindow(dpy, DefaultRootWindow(dpy), 0, 0, 1, 1, 0, 0, 0);
     clipboard = XInternAtom(dpy, "CLIPBOARD", False);
     targets = XInternAtom(dpy, "TARGETS", False);
+    multiple = XInternAtom(dpy, "MULTIPLE", False);
+    atom_pair = XInternAtom(dpy, "ATOM_PAIR", False);
     timestamp = XInternAtom(dpy, "TIMESTAMP", False);
     utf8 = XInternAtom(dpy, "UTF8_STRING", False);
     property = XInternAtom(dpy, "_RAWCLIP_TEST_PROBE", False);
@@ -349,13 +352,15 @@ probe_owner(void)
     for (i = 0U; i < nitems; i++) {
         Atom a = ((Atom *)data)[i];
         if (a == targets) have_targets = true;
+        else if (a == multiple) have_multiple = true;
         else if (a == timestamp) have_timestamp = true;
         else if (a == utf8) have_utf8 = true;
         else if (a == XA_STRING) have_string = true;
     }
     XFree(data);
     data = NULL;
-    if (!have_targets || !have_timestamp || !have_utf8 || !have_string) {
+    if (!have_targets || !have_multiple || !have_timestamp || !have_utf8 ||
+        !have_string) {
         XDestroyWindow(dpy, win);
         XCloseDisplay(dpy);
         return 4;
@@ -377,6 +382,76 @@ probe_owner(void)
         return 5;
     }
     if (data != NULL) XFree(data);
+    data = NULL;
+
+    {
+        Atom pairs[6];
+        Atom targets_property =
+            XInternAtom(dpy, "_RAWCLIP_TEST_MULTI_TARGETS", False);
+        Atom unknown_property =
+            XInternAtom(dpy, "_RAWCLIP_TEST_MULTI_UNKNOWN", False);
+        Atom time_property =
+            XInternAtom(dpy, "_RAWCLIP_TEST_MULTI_TIME", False);
+
+        pairs[0] = targets;
+        pairs[1] = targets_property;
+        pairs[2] = unknown;
+        pairs[3] = unknown_property;
+        pairs[4] = timestamp;
+        pairs[5] = time_property;
+        XChangeProperty(dpy, win, property, atom_pair, 32, PropModeReplace,
+                        (unsigned char *)pairs, 6);
+        XConvertSelection(dpy, clipboard, multiple, property, win, CurrentTime);
+        XFlush(dpy);
+        for (;;) {
+            XNextEvent(dpy, &ev);
+            if (ev.type == SelectionNotify) break;
+        }
+        if (ev.xselection.property == None ||
+            XGetWindowProperty(dpy, win, property, 0, 6, True, atom_pair,
+                               &actual, &format, &nitems, &after, &data) != Success ||
+            actual != atom_pair || format != 32 || nitems != 6U || after != 0U ||
+            data == NULL) {
+            if (data != NULL) XFree(data);
+            XDestroyWindow(dpy, win);
+            XCloseDisplay(dpy);
+            return 6;
+        }
+        {
+            Atom *result = (Atom *)data;
+            if (result[0] != targets || result[1] != targets_property ||
+                result[2] != None || result[3] != unknown_property ||
+                result[4] != timestamp || result[5] != time_property) {
+                XFree(data);
+                XDestroyWindow(dpy, win);
+                XCloseDisplay(dpy);
+                return 7;
+            }
+        }
+        XFree(data);
+        data = NULL;
+
+        if (XGetWindowProperty(dpy, win, targets_property, 0, 64, True, XA_ATOM,
+                               &actual, &format, &nitems, &after, &data) != Success ||
+            actual != XA_ATOM || format != 32 || nitems == 0U || after != 0U) {
+            if (data != NULL) XFree(data);
+            XDestroyWindow(dpy, win);
+            XCloseDisplay(dpy);
+            return 8;
+        }
+        if (data != NULL) XFree(data);
+        data = NULL;
+        if (XGetWindowProperty(dpy, win, time_property, 0, 1, True, XA_INTEGER,
+                               &actual, &format, &nitems, &after, &data) != Success ||
+            actual != XA_INTEGER || format != 32 || nitems != 1U || after != 0U) {
+            if (data != NULL) XFree(data);
+            XDestroyWindow(dpy, win);
+            XCloseDisplay(dpy);
+            return 9;
+        }
+        if (data != NULL) XFree(data);
+        data = NULL;
+    }
 
     XConvertSelection(dpy, clipboard, unknown, property, win, CurrentTime);
     XFlush(dpy);
@@ -387,7 +462,7 @@ probe_owner(void)
     if (ev.xselection.property != None) {
         XDestroyWindow(dpy, win);
         XCloseDisplay(dpy);
-        return 6;
+        return 10;
     }
 
     XDestroyWindow(dpy, win);

@@ -19,6 +19,7 @@
 #include <unistd.h>
 
 #define RAWCLIP_MAX_SEND_TRANSFERS 16U
+#define RAWCLIP_MAX_MULTIPLE_PAIRS 64U
 #define RAWCLIP_SEND_TIMEOUT_MS 10000ULL
 
 struct send_transfer {
@@ -62,6 +63,8 @@ struct rawclip_x11 {
     Atom clipboard;
     Atom primary;
     Atom targets;
+    Atom multiple;
+    Atom atom_pair;
     Atom timestamp;
     Atom utf8;
     Atom string;
@@ -765,12 +768,94 @@ own_selection(struct rawclip_x11 *x, Atom selection, const char *text, size_t le
     return 0;
 }
 
+static bool
+convert_owned_target(struct rawclip_x11 *x, Atom selection, Window requestor,
+                     Atom target, Atom property, struct owned_selection *owned)
+{
+    if (property == None) return false;
+    if (target == x->targets) {
+        Atom list[] = {x->targets, x->multiple, x->timestamp, x->utf8, x->string};
+        XChangeProperty(x->dpy, requestor, property, XA_ATOM, 32,
+                        PropModeReplace, (unsigned char *)list, 5);
+        return true;
+    }
+    if (target == x->timestamp) {
+        unsigned long t = owned->time;
+        XChangeProperty(x->dpy, requestor, property, XA_INTEGER, 32,
+                        PropModeReplace, (unsigned char *)&t, 1);
+        return true;
+    }
+    if (target == x->utf8) {
+        return serve_selection_data(x, selection, requestor, property, x->utf8,
+                                    (const unsigned char *)owned->text,
+                                    owned->len);
+    }
+    if (target == x->string) {
+        unsigned char *latin1 = NULL;
+        size_t latin1_len = 0U;
+        bool ok = false;
+
+        if (rawclip_utf8_to_latin1(owned->text, owned->len, &latin1,
+                                   &latin1_len) == 0) {
+            ok = serve_selection_data(x, selection, requestor, property,
+                                      x->string, latin1, latin1_len);
+            rawclip_memzero(latin1, latin1_len);
+            free(latin1);
+        }
+        return ok;
+    }
+    return false;
+}
+
+static bool
+convert_multiple(struct rawclip_x11 *x, const XSelectionRequestEvent *req,
+                 struct owned_selection *owned)
+{
+    Atom actual;
+    int format;
+    unsigned long nitems;
+    unsigned long after;
+    unsigned char *data = NULL;
+    Atom *pairs;
+    unsigned long i;
+    bool ok = false;
+
+    if (req->property == None) return false;
+    if (XGetWindowProperty(x->dpy, req->requestor, req->property, 0,
+                           (long)(RAWCLIP_MAX_MULTIPLE_PAIRS * 2U), False,
+                           x->atom_pair, &actual, &format, &nitems, &after,
+                           &data) != Success || data == NULL ||
+        actual != x->atom_pair || format != 32 || after != 0U ||
+        nitems == 0U || (nitems % 2U) != 0U) {
+        if (data != NULL) XFree(data);
+        return false;
+    }
+
+    pairs = (Atom *)data;
+    for (i = 0U; i < nitems; i += 2U) {
+        Atom target = pairs[i];
+        Atom property = pairs[i + 1U];
+        if (target == x->multiple || property == None ||
+            !convert_owned_target(x, req->selection, req->requestor, target,
+                                  property, owned)) {
+            pairs[i] = None;
+        }
+    }
+    XChangeProperty(x->dpy, req->requestor, req->property, x->atom_pair, 32,
+                    PropModeReplace, data, (int)nitems);
+    ok = true;
+    XFree(data);
+    return ok;
+}
+
 static void
 selection_request(struct rawclip_x11 *x, const XSelectionRequestEvent *req)
 {
     XSelectionEvent out;
     Atom property = req->property == None ? req->target : req->property;
+    struct owned_selection *owned;
     bool ok = false;
+
     memset(&out, 0, sizeof(out));
     out.type = SelectionNotify;
     out.display = req->display;
@@ -780,37 +865,14 @@ selection_request(struct rawclip_x11 *x, const XSelectionRequestEvent *req)
     out.time = req->time;
     out.property = None;
 
-    {
-        struct owned_selection *owned = owned_slot(x, req->selection);
-        if (owned != NULL && owned->text != NULL &&
-            XGetSelectionOwner(x->dpy, req->selection) == x->win) {
-            if (req->target == x->targets) {
-                Atom list[] = {x->targets, x->timestamp, x->utf8, x->string};
-                XChangeProperty(x->dpy, req->requestor, property, XA_ATOM, 32,
-                                PropModeReplace, (unsigned char *)list, 4);
-                ok = true;
-            } else if (req->target == x->timestamp) {
-                unsigned long t = owned->time;
-                XChangeProperty(x->dpy, req->requestor, property, XA_INTEGER, 32,
-                                PropModeReplace, (unsigned char *)&t, 1);
-                ok = true;
-            } else if (req->target == x->utf8) {
-                ok = serve_selection_data(x, req->selection, req->requestor,
-                                          property, x->utf8,
-                                          (const unsigned char *)owned->text,
-                                          owned->len);
-            } else if (req->target == x->string) {
-                unsigned char *latin1 = NULL;
-                size_t latin1_len = 0U;
-                if (rawclip_utf8_to_latin1(owned->text, owned->len, &latin1,
-                                           &latin1_len) == 0) {
-                    ok = serve_selection_data(x, req->selection, req->requestor,
-                                              property, x->string, latin1,
-                                              latin1_len);
-                    rawclip_memzero(latin1, latin1_len);
-                    free(latin1);
-                }
-            }
+    owned = owned_slot(x, req->selection);
+    if (owned != NULL && owned->text != NULL &&
+        XGetSelectionOwner(x->dpy, req->selection) == x->win) {
+        if (req->target == x->multiple) {
+            ok = convert_multiple(x, req, owned);
+        } else {
+            ok = convert_owned_target(x, req->selection, req->requestor,
+                                      req->target, property, owned);
         }
     }
     if (ok) out.property = property;
@@ -868,6 +930,8 @@ rawclip_x11_create(const struct rawclip_config *cfg, rawclip_capture_fn capture,
     x->clipboard = XInternAtom(x->dpy, "CLIPBOARD", False);
     x->primary = XA_PRIMARY;
     x->targets = XInternAtom(x->dpy, "TARGETS", False);
+    x->multiple = XInternAtom(x->dpy, "MULTIPLE", False);
+    x->atom_pair = XInternAtom(x->dpy, "ATOM_PAIR", False);
     x->timestamp = XInternAtom(x->dpy, "TIMESTAMP", False);
     x->utf8 = XInternAtom(x->dpy, "UTF8_STRING", False);
     x->string = XA_STRING;
