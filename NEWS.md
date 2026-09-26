@@ -1,3 +1,30 @@
+rawclip 0.2.0 — 2026-09-26
+==========================
+
+Sensitive clipboard interoperability
+------------------------------------
+
+* Interpret `x-kde-passwordManagerHint` as a value-bearing selection target:
+  request the hint before text, reject the exact value `secret`, and allow a
+  readable non-secret value to proceed through normal capture policy.
+* Fail closed when an owner advertises the sensitive target but cannot return a
+  bounded, valid 8-bit hint value; secret or malformed offers receive no text
+  request.
+* Bind selection replies and incoming INCR chunks to the XFixes owner admitted
+  for the transfer, and abandon pending receive state when ownership disappears.
+* Reject direct selection properties that exceed the admitted read bound rather
+  than accepting a truncated clipboard value.
+* Document direct rawpass 1.1.0 interoperability: rawpass emits the `secret`
+  hint, so default rawclip policy excludes its password and OTP clipboard data
+  without application-name rules.
+
+Testing
+-------
+
+* Extend the Xvfb owner/requestor harness with exact-secret, non-secret, and
+  broken-hint cases and assert that rejected offers never receive a text
+  conversion request.
+
 rawclip 0.1.0 — 2026-09-26
 ==========================
 
