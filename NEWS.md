@@ -1,3 +1,36 @@
+rawclip 0.5.0 — 2026-09-26
+==========================
+
+History UI
+----------
+
+* Add `rawclip menu delete` beside the existing replay action so one history
+  entry can be removed through the same rawmenu selector without introducing a
+  second UI authority.
+* Move menu preview length into strict `menu.preview_chars` policy and truncate
+  by UTF-8 characters rather than raw bytes.
+* Treat rawmenu status 1 as cancellation while surfacing exec failures, crashes,
+  nonzero operational exits, and empty successful output as errors.
+
+Diagnostics and lifecycle
+-------------------------
+
+* Add `rawclip health` as a small authenticated event-loop probe and extend
+  `status` with receive state, outgoing INCR count, and live rawclip-owned
+  CLIPBOARD/PRIMARY selections.
+* Keep the per-display singleton lock file as a stable runtime inode and unlink
+  the control socket only from the daemon instance that actually bound it.
+  A losing second daemon can no longer remove the first daemon's live endpoint.
+* Preserve the running policy after failed reloads and exercise rapid X11 owner
+  turnover without allowing pending receive state to wedge the daemon.
+
+Testing
+-------
+
+* Cover menu selection/deletion, UTF-8 preview truncation, cancellation and
+  frontend failures, singleton startup, health probing, failed reload, and
+  rapid selection churn under Xvfb.
+
 rawclip 0.4.0 — 2026-09-26
 ==========================
 
