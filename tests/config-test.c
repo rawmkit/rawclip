@@ -21,6 +21,7 @@ main(int argc, char **argv)
     assert(strcmp(rawclip_sync_mode_name(cfg.sync_mode), "none") == 0);
     assert(cfg.honor_password_manager_hint);
     assert(strcmp(cfg.menu_command, "rawmenu") == 0);
+    assert(cfg.menu_preview_chars == 200U);
     rawclip_config_destroy(&cfg);
     return 0;
 }

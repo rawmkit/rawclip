@@ -28,6 +28,7 @@ struct rawclip_config {
     bool honor_password_manager_hint;
     char *menu_command;
     char *menu_prompt;
+    size_t menu_preview_chars;
     struct rawclip_exclude_rule *rules;
     size_t rules_len;
 };

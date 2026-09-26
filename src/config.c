@@ -76,6 +76,7 @@ rawclip_config_defaults(struct rawclip_config *cfg)
     cfg->honor_password_manager_hint = true;
     cfg->menu_command = dup_string("rawmenu");
     cfg->menu_prompt = dup_string("clipboard");
+    cfg->menu_preview_chars = 200U;
 }
 
 void
@@ -286,11 +287,11 @@ apply_config(config_t *c, struct rawclip_config *cfg, char *err, size_t err_size
         static const char *const history_keys[] = {"max_entries", "max_entry_bytes", "deduplicate"};
         static const char *const selection_keys[] = {"clipboard", "primary", "synchronize"};
         static const char *const security_keys[] = {"honor_password_manager_hint"};
-        static const char *const menu_keys[] = {"command", "prompt"};
+        static const char *const menu_keys[] = {"command", "prompt", "preview_chars"};
         if (validate_group(history, "history", history_keys, 3U, err, err_size) != 0 ||
             validate_group(selection, "selection", selection_keys, 3U, err, err_size) != 0 ||
             validate_group(security, "security", security_keys, 1U, err, err_size) != 0 ||
-            validate_group(menu, "menu", menu_keys, 2U, err, err_size) != 0) return -1;
+            validate_group(menu, "menu", menu_keys, 3U, err, err_size) != 0) return -1;
         if (validate_path_type(c, "history.max_entries", CONFIG_TYPE_INT, CONFIG_TYPE_INT64, err, err_size) != 0 ||
             validate_path_type(c, "history.max_entry_bytes", CONFIG_TYPE_INT, CONFIG_TYPE_INT64, err, err_size) != 0 ||
             validate_path_type(c, "history.deduplicate", CONFIG_TYPE_BOOL, CONFIG_TYPE_BOOL, err, err_size) != 0 ||
@@ -299,7 +300,8 @@ apply_config(config_t *c, struct rawclip_config *cfg, char *err, size_t err_size
             validate_path_type(c, "selection.synchronize", CONFIG_TYPE_STRING, CONFIG_TYPE_STRING, err, err_size) != 0 ||
             validate_path_type(c, "security.honor_password_manager_hint", CONFIG_TYPE_BOOL, CONFIG_TYPE_BOOL, err, err_size) != 0 ||
             validate_path_type(c, "menu.command", CONFIG_TYPE_STRING, CONFIG_TYPE_STRING, err, err_size) != 0 ||
-            validate_path_type(c, "menu.prompt", CONFIG_TYPE_STRING, CONFIG_TYPE_STRING, err, err_size) != 0) return -1;
+            validate_path_type(c, "menu.prompt", CONFIG_TYPE_STRING, CONFIG_TYPE_STRING, err, err_size) != 0 ||
+            validate_path_type(c, "menu.preview_chars", CONFIG_TYPE_INT, CONFIG_TYPE_INT64, err, err_size) != 0) return -1;
     }
 
     if (read_size(c, "history.max_entries", &cfg->max_entries, 1U, 65536U, err, err_size) != 0) return -1;
@@ -329,6 +331,7 @@ apply_config(config_t *c, struct rawclip_config *cfg, char *err, size_t err_size
     if (config_lookup_bool(c, "security.honor_password_manager_hint", &b)) cfg->honor_password_manager_hint = b != 0;
     if (config_lookup_string(c, "menu.command", &s) && replace_string(&cfg->menu_command, s) != 0) return -1;
     if (config_lookup_string(c, "menu.prompt", &s) && replace_string(&cfg->menu_prompt, s) != 0) return -1;
+    if (read_size(c, "menu.preview_chars", &cfg->menu_preview_chars, 8U, 4096U, err, err_size) != 0) return -1;
     if (cfg->menu_command == NULL || *cfg->menu_command == '\0') {
         set_error(err, err_size, "menu.command must not be empty");
         errno = EINVAL;
