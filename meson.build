@@ -109,6 +109,18 @@ test(
   args: [meson.current_source_dir() / 'config/rawclip.conf'],
 )
 
+test(
+  'config-invalid',
+  find_program('tests/config-invalid.sh'),
+  args: [rawclipd],
+)
+
+test(
+  'cli',
+  find_program('tests/cli.sh'),
+  args: [rawclip, rawclipd, meson.current_source_dir() / 'config/rawclip.conf'],
+)
+
 x11_helper = executable(
   'x11-helper',
   'tests/x11-helper.c',

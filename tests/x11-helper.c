@@ -141,6 +141,12 @@ paste(void)
 int
 main(int argc, char **argv)
 {
+    if (argc == 2 && strcmp(argv[1], "ping") == 0) {
+        Display *dpy = XOpenDisplay(NULL);
+        if (dpy == NULL) return 1;
+        XCloseDisplay(dpy);
+        return 0;
+    }
     if (argc >= 2 && strcmp(argv[1], "paste") == 0 && argc == 2) return paste();
     if (argc >= 3 && strcmp(argv[1], "offer") == 0) {
         bool secret = false;

@@ -22,12 +22,13 @@ trap cleanup EXIT HUP INT TERM
 
 export XDG_RUNTIME_DIR="$state/runtime"
 mkdir -m 700 "$XDG_RUNTIME_DIR"
-export DISPLAY=:97
+export DISPLAY=:$((100 + ($$ % 500)))
 Xvfb "$DISPLAY" -screen 0 800x600x24 -nolisten tcp >"$state/xvfb.log" 2>&1 &
 xvfb_pid=$!
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-    "$helper" paste >/dev/null 2>&1 && break || sleep 0.05
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    "$helper" ping >/dev/null 2>&1 && break || sleep 0.05
 done
+"$helper" ping
 
 cat >"$state/rawclip.conf" <<EOF2
 history = { max_entries = 8; max_entry_bytes = 4096; deduplicate = true; };
