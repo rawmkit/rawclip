@@ -339,6 +339,14 @@ fail:
     return -1;
 }
 
+static bool
+request_uses_entry_id(uint16_t type)
+{
+    return type == RAWCLIP_IPC_SHOW || type == RAWCLIP_IPC_SELECT ||
+           type == RAWCLIP_IPC_DELETE || type == RAWCLIP_IPC_PIN ||
+           type == RAWCLIP_IPC_UNPIN;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -352,14 +360,20 @@ main(int argc, char **argv)
     bool exact = false;
     int opt;
     int rc;
+    bool show_version = false;
 
     (void)signal(SIGPIPE, SIG_IGN);
     while ((opt = getopt(argc, argv, "c:v")) != -1) {
         switch (opt) {
         case 'c': config_path = optarg; break;
-        case 'v': printf("rawclip-%s\n", RAWCLIP_VERSION); return 0;
+        case 'v': show_version = true; break;
         default: usage(stderr); return 2;
         }
+    }
+    if (show_version) {
+        if (config_path != NULL || optind != argc) { usage(stderr); return 2; }
+        printf("rawclip-%s\n", RAWCLIP_VERSION);
+        return 0;
     }
     if (optind >= argc) { usage(stderr); return 2; }
     cmd = argv[optind++];
@@ -411,6 +425,10 @@ main(int argc, char **argv)
     else { usage(stderr); return 2; }
 #undef CMD0
 #undef CMD1
+    if (request_uses_entry_id(type)) {
+        uint64_t id;
+        if (rawclip_parse_u64(arg, &id) != 0) { usage(stderr); return 2; }
+    }
     if (type == RAWCLIP_IPC_SHOW) exact = true;
     if (request_once(type, arg, &reply) != 0) {
         fprintf(stderr, "rawclip: %s\n", strerror(errno));

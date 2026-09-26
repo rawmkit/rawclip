@@ -12,6 +12,33 @@ version=$4
 [ "$($rawclipd -v)" = "rawclipd-$version" ]
 "$rawclipd" -C -c "$config"
 
+for bad in '+1' ' 1' '0' '18446744073709551616'; do
+    if "$rawclip" show "$bad" >/dev/null 2>&1; then
+        echo "invalid entry id succeeded: $bad" >&2
+        exit 1
+    else
+        [ "$?" -eq 2 ]
+    fi
+done
+if "$rawclip" -v trailing >/dev/null 2>&1; then
+    echo 'version mode accepted trailing arguments' >&2
+    exit 1
+else
+    [ "$?" -eq 2 ]
+fi
+if "$rawclip" -c "$config" -v >/dev/null 2>&1; then
+    echo 'rawclip version mode accepted config policy' >&2
+    exit 1
+else
+    [ "$?" -eq 2 ]
+fi
+if "$rawclipd" -c "$config" -v >/dev/null 2>&1; then
+    echo 'rawclipd version mode accepted config policy' >&2
+    exit 1
+else
+    [ "$?" -eq 2 ]
+fi
+
 if "$rawclip" nonsense >/dev/null 2>&1; then
     echo 'unknown command succeeded' >&2
     exit 1

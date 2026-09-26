@@ -285,6 +285,7 @@ main(int argc, char **argv)
     char err[256] = {0};
     const char *config_path = NULL;
     bool check_config = false;
+    bool show_version = false;
     int opt;
     int rc = 1;
 
@@ -295,9 +296,14 @@ main(int argc, char **argv)
         switch (opt) {
         case 'c': config_path = optarg; break;
         case 'C': check_config = true; break;
-        case 'v': printf("rawclipd-%s\n", RAWCLIP_VERSION); return 0;
+        case 'v': show_version = true; break;
         default: usage(stderr); return 2;
         }
+    }
+    if (show_version) {
+        if (check_config || config_path != NULL || optind != argc) { usage(stderr); return 2; }
+        printf("rawclipd-%s\n", RAWCLIP_VERSION);
+        return 0;
     }
     if (optind != argc) { usage(stderr); return 2; }
     if (check_config) {

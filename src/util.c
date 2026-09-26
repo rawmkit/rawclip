@@ -44,21 +44,31 @@ rawclip_now_ms(void)
 int
 rawclip_parse_u64(const char *s, uint64_t *out)
 {
-    char *end = NULL;
-    unsigned long long value;
+    uint64_t value = 0U;
+    size_t i;
 
     if (s == NULL || *s == '\0' || out == NULL) {
         errno = EINVAL;
         return -1;
     }
-
-    errno = 0;
-    value = strtoull(s, &end, 10);
-    if (errno != 0 || end == s || *end != '\0') {
+    for (i = 0U; s[i] != '\0'; i++) {
+        unsigned int digit;
+        if (s[i] < '0' || s[i] > '9') {
+            errno = EINVAL;
+            return -1;
+        }
+        digit = (unsigned int)(s[i] - '0');
+        if (value > (UINT64_MAX - digit) / 10U) {
+            errno = EINVAL;
+            return -1;
+        }
+        value = value * 10U + digit;
+    }
+    if (value == 0U) {
         errno = EINVAL;
         return -1;
     }
-    *out = (uint64_t)value;
+    *out = value;
     return 0;
 }
 

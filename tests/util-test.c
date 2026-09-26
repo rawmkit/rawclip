@@ -31,5 +31,16 @@ main(void)
     errno = 0;
     assert(rawclip_utf8_to_latin1("\xe2\x82\xac", 3U, &roundtrip, &roundtrip_len) == -1);
     assert(errno == EILSEQ);
+    {
+        uint64_t id = 0U;
+        assert(rawclip_parse_u64("1", &id) == 0 && id == 1U);
+        assert(rawclip_parse_u64("00042", &id) == 0 && id == 42U);
+        assert(rawclip_parse_u64("0", &id) == -1);
+        assert(rawclip_parse_u64("+1", &id) == -1);
+        assert(rawclip_parse_u64(" 1", &id) == -1);
+        assert(rawclip_parse_u64("1 ", &id) == -1);
+        assert(rawclip_parse_u64("18446744073709551616", &id) == -1);
+    }
+
     return 0;
 }
