@@ -7,6 +7,7 @@
 
 #include <errno.h>
 #include <poll.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -296,6 +297,7 @@ main(int argc, char **argv)
     int opt;
     int rc;
 
+    (void)signal(SIGPIPE, SIG_IGN);
     while ((opt = getopt(argc, argv, "c:v")) != -1) {
         switch (opt) {
         case 'c': config_path = optarg; break;

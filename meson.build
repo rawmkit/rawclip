@@ -118,7 +118,7 @@ test(
 test(
   'cli',
   find_program('tests/cli.sh'),
-  args: [rawclip, rawclipd, meson.current_source_dir() / 'config/rawclip.conf'],
+  args: [rawclip, rawclipd, meson.current_source_dir() / 'config/rawclip.conf', meson.project_version()],
 )
 
 x11_helper = executable(

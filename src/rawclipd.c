@@ -17,9 +17,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/file.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/time.h>
 #include <sys/un.h>
 #include <unistd.h>
 
@@ -29,6 +31,8 @@ struct daemon_state {
     struct rawclip_x11 *x11;
     char *config_path;
     char socket_path[sizeof(((struct sockaddr_un *)0)->sun_path)];
+    char lock_path[4096];
+    int lock_fd;
     int listen_fd;
     bool paused;
 };
@@ -73,30 +77,37 @@ static int
 setup_socket(struct daemon_state *st)
 {
     struct sockaddr_un addr;
+    struct stat sb;
     int fd;
+    int n;
+
     if (validate_runtime_dir() != 0) return -1;
     if (rawclip_ipc_socket_path(st->socket_path, sizeof(st->socket_path), NULL) != 0) return -1;
+    n = snprintf(st->lock_path, sizeof(st->lock_path), "%s.lock", st->socket_path);
+    if (n < 0 || (size_t)n >= sizeof(st->lock_path)) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+    st->lock_fd = open(st->lock_path, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR);
+    if (st->lock_fd < 0) return -1;
+    if (fstat(st->lock_fd, &sb) != 0 || !S_ISREG(sb.st_mode) || sb.st_uid != getuid()) {
+        errno = EPERM;
+        return -1;
+    }
+    if (flock(st->lock_fd, LOCK_EX | LOCK_NB) != 0) return -1;
+
+    if (unlink(st->socket_path) != 0 && errno != ENOENT) return -1;
     fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) return -1;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
     memcpy(addr.sun_path, st->socket_path, strlen(st->socket_path) + 1U);
     if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
-        if (errno == EADDRINUSE) {
-            int probe = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
-            if (probe >= 0) {
-                if (connect(probe, (struct sockaddr *)&addr, sizeof(addr)) != 0 && errno == ECONNREFUSED) {
-                    close(probe);
-                    if (unlink(st->socket_path) == 0 && bind(fd, (struct sockaddr *)&addr, sizeof(addr)) == 0) goto bound;
-                } else {
-                    close(probe);
-                }
-            }
-        }
+        int saved = errno;
         close(fd);
+        errno = saved;
         return -1;
     }
-bound:
     if (chmod(st->socket_path, S_IRUSR | S_IWUSR) != 0 || listen(fd, 16) != 0) {
         int saved = errno;
         close(fd);
@@ -106,6 +117,16 @@ bound:
     }
     st->listen_fd = fd;
     return 0;
+}
+
+static void
+bound_client_io(int fd)
+{
+    struct timeval tv;
+    memset(&tv, 0, sizeof(tv));
+    tv.tv_sec = 1;
+    (void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    (void)setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 }
 
 static int
@@ -253,6 +274,7 @@ main(int argc, char **argv)
     int rc = 1;
 
     memset(&st, 0, sizeof(st));
+    st.lock_fd = -1;
     st.listen_fd = -1;
     while ((opt = getopt(argc, argv, "c:Cv")) != -1) {
         switch (opt) {
@@ -271,7 +293,13 @@ main(int argc, char **argv)
         }
         return 0;
     }
-    if (config_path != NULL) st.config_path = strdup(config_path);
+    if (config_path != NULL) {
+        st.config_path = strdup(config_path);
+        if (st.config_path == NULL) {
+            fprintf(stderr, "rawclipd: out of memory\n");
+            goto out;
+        }
+    }
     if (rawclip_config_load(&st.cfg, config_path, err, sizeof(err)) != 0) {
         fprintf(stderr, "rawclipd: %s\n", err[0] ? err : strerror(errno));
         goto out;
@@ -316,6 +344,7 @@ main(int argc, char **argv)
         if ((fds[1].revents & POLLIN) != 0) {
             int client = accept4(st.listen_fd, NULL, NULL, SOCK_CLOEXEC);
             if (client >= 0) {
+                bound_client_io(client);
                 (void)handle_client(&st, client);
                 close(client);
             }
@@ -329,6 +358,8 @@ main(int argc, char **argv)
 out:
     if (st.listen_fd >= 0) close(st.listen_fd);
     if (st.socket_path[0] != '\0') unlink(st.socket_path);
+    if (st.lock_fd >= 0) close(st.lock_fd);
+    if (st.lock_path[0] != '\0') unlink(st.lock_path);
     rawclip_x11_destroy(st.x11);
     rawclip_history_destroy(&st.history);
     rawclip_config_destroy(&st.cfg);

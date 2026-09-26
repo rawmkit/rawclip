@@ -6,9 +6,10 @@ rawclip="$rawclip_dir/$(basename -- "$1")"
 rawclipd_dir=$(CDPATH= cd -- "$(dirname -- "$2")" && pwd)
 rawclipd="$rawclipd_dir/$(basename -- "$2")"
 config=$3
+version=$4
 
-[ "$($rawclip -v)" = 'rawclip-0.1.0' ]
-[ "$($rawclipd -v)" = 'rawclipd-0.1.0' ]
+[ "$($rawclip -v)" = "rawclip-$version" ]
+[ "$($rawclipd -v)" = "rawclipd-$version" ]
 "$rawclipd" -C -c "$config"
 
 if "$rawclip" nonsense >/dev/null 2>&1; then

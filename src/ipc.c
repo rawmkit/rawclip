@@ -124,6 +124,10 @@ rawclip_ipc_socket_path(char *buf, size_t size, const char *display)
             clean[j++] = '_';
         }
     }
+    if (d[i] != '\0') {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
     clean[j] = '\0';
     n = snprintf(buf, size, "%s/rawclip-%s.sock", runtime, clean);
     if (n < 0 || (size_t)n >= size) {
