@@ -1,3 +1,16 @@
+rawclip 0.2.1 — 2026-09-26
+==========================
+
+Menu integration
+----------------
+
+* Invoke current rawmenu through its public `-M select -p PROMPT` frontend
+  contract instead of the invalid positional `select` spelling.
+* Make the Xvfb menu stub assert the exact selector argv so rawmenu CLI drift is
+  caught by integration coverage.
+* Report an empty in-memory history on stderr while preserving it as a successful
+  no-op for window-manager bindings.
+
 rawclip 0.2.0 — 2026-09-26
 ==========================
 
