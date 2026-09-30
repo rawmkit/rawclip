@@ -5,6 +5,7 @@
 #include "util.h"
 #include "version.h"
 
+#include <ctype.h>
 #include <errno.h>
 #include <poll.h>
 #include <signal.h>
@@ -327,7 +328,7 @@ menu_command(const struct rawclip_config *cfg, enum menu_action action)
     if (input == NULL) goto parent_fail;
     inpipe[1] = -1;
     for (i = 0U; i < len; i++) {
-        fprintf(input, "%llu\t%c ", (unsigned long long)entries[i].id,
+        fprintf(input, "%llu %c ", (unsigned long long)entries[i].id,
                 entries[i].pinned ? '*' : '-');
         preview(input, entries[i].text, entries[i].len, cfg->menu_preview_chars);
         fputc('\n', input);
@@ -351,8 +352,11 @@ menu_command(const struct rawclip_config *cfg, enum menu_action action)
         goto fail;
     }
     selected[n] = '\0';
-    if (strchr(selected, '\t') != NULL) *strchr(selected, '\t') = '\0';
-    if (strchr(selected, '\n') != NULL) *strchr(selected, '\n') = '\0';
+    {
+        char *end = selected;
+        while (*end != '\0' && !isspace((unsigned char)*end)) ++end;
+        *end = '\0';
+    }
     if (rawclip_parse_u64(selected, &id) != 0) { errno = EPROTO; goto fail; }
     snprintf(idbuf, sizeof(idbuf), "%llu", (unsigned long long)id);
     {

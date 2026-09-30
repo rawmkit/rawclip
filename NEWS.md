@@ -1,6 +1,14 @@
 rawclip 1.0.0 — 2026-09-26
 ==========================
 
+Menu presentation
+-----------------
+
+* Keep rawmenu history rows printable: separate the entry ID from its pin
+  marker with an ordinary space instead of a literal tab control character.
+  The menu parser still extracts the leading decimal ID independently of the
+  preview text.
+
 Contract freeze
 ---------------
 

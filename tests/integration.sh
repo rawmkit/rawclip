@@ -232,7 +232,7 @@ RAWCLIP_TEST_MENU_CAPTURE="$state/menu-long-prompt.input" \
 "$rawclip" unpin "$id"
 RAWCLIP_TEST_MENU_CAPTURE="$state/menu-delete.input" "$rawclip" -c "$state/rawclip.conf" menu delete
 [ -z "$("$rawclip" list)" ]
-[ "$(cat "$state/menu-delete.input")" = "$(printf '%s\t%s' "$id" '- alp…')" ]
+[ "$(cat "$state/menu-delete.input")" = "$(printf '%s %s' "$id" '- alp…')" ]
 
 "$helper" offer 'alpha-value' >"$state/alpha-reowner.out" &
 owner_pid=$!
@@ -244,17 +244,17 @@ wait "$owner_pid"
 owner_pid=
 RAWCLIP_TEST_MENU_CAPTURE="$state/menu-select.input" "$rawclip" -c "$state/rawclip.conf" menu
 [ "$("$helper" paste)" = 'alpha-value' ]
-[ "$(cat "$state/menu-select.input")" = "$(printf '%s\t%s' "$id" '- alp…')" ]
+[ "$(cat "$state/menu-select.input")" = "$(printf '%s %s' "$id" '- alp…')" ]
 
 # Pinning protects history from automatic cleanup while preserving explicit controls.
 "$rawclip" pin "$id"
 "$rawclip" status | grep -q 'pinned=1'
 printf '%s\n' "$("$rawclip" list)" | grep -F "$(printf '%s\t%s' "$id" '* alpha-value')"
 RAWCLIP_TEST_MENU_CAPTURE="$state/menu-pin.input" "$rawclip" -c "$state/rawclip.conf" menu toggle-pin
-[ "$(cat "$state/menu-pin.input")" = "$(printf '%s\t%s' "$id" '* alp…')" ]
+[ "$(cat "$state/menu-pin.input")" = "$(printf '%s %s' "$id" '* alp…')" ]
 "$rawclip" status | grep -q 'pinned=0'
 RAWCLIP_TEST_MENU_CAPTURE="$state/menu-repin.input" "$rawclip" -c "$state/rawclip.conf" menu toggle-pin
-[ "$(cat "$state/menu-repin.input")" = "$(printf '%s\t%s' "$id" '- alp…')" ]
+[ "$(cat "$state/menu-repin.input")" = "$(printf '%s %s' "$id" '- alp…')" ]
 "$rawclip" status | grep -q 'pinned=1'
 
 "$helper" offer 'temporary-value' >"$state/temporary-owner.out" &
@@ -281,7 +281,7 @@ kill "$owner_pid"
 wait "$owner_pid"
 owner_pid=
 RAWCLIP_TEST_MENU_CAPTURE="$state/menu-utf8.input" "$rawclip" -c "$state/rawclip.conf" menu
-[ "$(cat "$state/menu-utf8.input")" = "$(printf '%s\t%s' "$id" '- ééé…')" ]
+[ "$(cat "$state/menu-utf8.input")" = "$(printf '%s %s' "$id" '- ééé…')" ]
 "$rawclip" clear
 
 "$helper" offer 'alpha-value' >"$state/alpha-final-owner.out" &
