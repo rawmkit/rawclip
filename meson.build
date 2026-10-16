@@ -91,6 +91,7 @@ history_test = executable(
   'history-test',
   ['tests/history-test.c', 'src/history.c', 'src/util.c'],
   include_directories: inc,
+  override_options: ['b_ndebug=false'],
 )
 test('history', history_test)
 
@@ -98,6 +99,7 @@ ipc_test = executable(
   'ipc-test',
   ['tests/ipc-test.c', 'src/ipc.c', 'src/util.c'],
   include_directories: inc,
+  override_options: ['b_ndebug=false'],
 )
 test('ipc', ipc_test)
 
@@ -105,6 +107,7 @@ util_test = executable(
   'util-test',
   ['tests/util-test.c', 'src/util.c'],
   include_directories: inc,
+  override_options: ['b_ndebug=false'],
 )
 test('util', util_test)
 
@@ -112,6 +115,7 @@ build_contract_test = executable(
   'build-contract-test',
   'tests/build-contract-test.c',
   include_directories: inc,
+  override_options: ['b_ndebug=false'],
 )
 test('build-contract', build_contract_test, args: [runtime_sysconfdir])
 
@@ -122,6 +126,7 @@ test(
     ['tests/config-test.c', 'src/config.c', 'src/util.c'],
     include_directories: inc,
     dependencies: [libconfig_dep],
+    override_options: ['b_ndebug=false'],
   ),
   args: [meson.current_source_dir() / 'config/rawclip.conf'],
 )
